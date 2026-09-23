@@ -1,0 +1,359 @@
+:root {
+  color-scheme: light;
+  --bg: #f3eee6;
+  --sidebar: #e7dfd4;
+  --card: #fffdfb;
+  --ink: #2c241c;
+  --muted: #6d6156;
+  --line: #e3d9cc;
+  --accent: #8f3d3a;
+  --accent-ink: #fffaf7;
+  --shadow: 0 1px 2px rgba(60, 40, 20, 0.06), 0 10px 28px rgba(60, 40, 20, 0.05);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px 14px;
+  background: var(--sidebar);
+  border-right: 1px solid var(--line);
+}
+
+.brand {
+  margin: 0;
+  padding: 0 8px;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+
+.nav-item {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 253, 251, 0.72);
+  font-weight: 600;
+}
+
+.sidebar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.content {
+  padding: 28px 32px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.card {
+  max-width: 840px;
+  padding: 22px 24px 24px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.card-titles {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.years {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+button.year {
+  padding: 2px 8px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+button.year.is-selected {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.segmented {
+  display: inline-flex;
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+button.segment {
+  padding: 6px 12px;
+  border: none;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+button.segment:last-child {
+  border-right: none;
+}
+
+button.segment.is-selected {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.chart-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.chart-year {
+  margin: 0 0 4px;
+  text-align: center;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+
+.chart-canvas {
+  position: relative;
+}
+
+.chart-canvas svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.chart-bar {
+  fill: var(--accent);
+}
+
+.chart-axis,
+.chart-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.chart-label,
+.chart-tick {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.chart-hit {
+  fill: transparent;
+}
+
+.bar-tip {
+  position: absolute;
+  z-index: 1;
+  transform: translate(-50%, calc(-100% - 6px));
+  padding: 4px 8px;
+  color: var(--accent-ink);
+  background: var(--ink);
+  border-radius: 6px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+h2,
+.profit-label,
+.metric-label,
+.lede,
+.note,
+label {
+  margin: 0;
+}
+
+h2 {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+
+.lede,
+.note {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.lede {
+  margin: 8px 0 18px;
+}
+
+.profit {
+  margin-top: 20px;
+}
+
+.profit-label,
+.metric-label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.profit-value {
+  margin: 2px 0 0;
+  color: var(--accent);
+  font-size: 40px;
+  font-weight: 650;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 28px;
+  margin-top: 22px;
+}
+
+.metric-value {
+  margin: 2px 0 0;
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.note {
+  margin-top: 18px;
+  font-size: 14px;
+}
+
+.note.error {
+  color: var(--accent);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+input {
+  width: 100%;
+  padding: 8px 10px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+input:focus,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+button {
+  padding: 8px 12px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+button.primary {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
+.icon-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sidebar-actions button {
+  text-align: left;
+}

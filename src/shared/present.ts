@@ -33,10 +33,10 @@ export function formatCount(value: number): string {
 
 function readyMetrics(totals: YearlyTotals): PresentedMetric[] {
   return [
-    { label: 'Buy volume', value: formatUsd(totals.bought) },
+    { label: 'Purchase volume', value: formatUsd(totals.bought) },
     { label: 'Sale volume', value: formatUsd(totals.sold) },
     { label: 'Unresolved items', value: formatCount(totals.unresolvedCount) },
-    { label: 'Unresolved cost', value: formatUsd(totals.unresolvedCost) }
+    { label: 'Unresolved costs', value: formatUsd(totals.unresolvedCost) }
   ]
 }
 
@@ -47,17 +47,17 @@ export function presentYearlyOverview(overview: YearlyOverview): PresentedOvervi
   if (overview.status === 'empty') {
     return {
       status: 'empty',
-      year: String(overview.year),
+      year: overview.year === 'all' ? 'All' : String(overview.year),
       years: overview.years,
-      message: `No Overall rows for ${overview.year}.`
+      message: overview.year === 'all' ? 'No Overall rows.' : `No Overall rows for ${overview.year}.`
     }
   }
 
   return {
     status: 'ready',
-    year: String(overview.year),
+    year: overview.year === 'all' ? 'All' : String(overview.year),
     years: overview.years,
-    profitLabel: 'Year-to-date profit',
+    profitLabel: 'Profit',
     profit: formatUsd(overview.profit),
     metrics: readyMetrics(overview)
   }

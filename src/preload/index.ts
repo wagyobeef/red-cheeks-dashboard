@@ -11,7 +11,7 @@ const api = {
   signIn: (): Promise<ActionResult> => ipcRenderer.invoke('connection:sign-in'),
   signOut: (): Promise<ActionResult> => ipcRenderer.invoke('connection:sign-out'),
   getYearlyOverview: (input: {
-    year: number | null
+    year: number | 'all' | null
     monthlyYear: number | null
     refresh: boolean
   }): Promise<HomeOverview | { status: 'error'; message: string }> => ipcRenderer.invoke('overview:get', input)

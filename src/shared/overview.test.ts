@@ -4,7 +4,7 @@ import { aggregateYearlyOverview, chooseYear, monthlyOverviewForSheet, yearlyOve
 import { readMonthCell, readMonthYear } from './month'
 import { presentYearlyOverview } from './present'
 import { SPREADSHEETS_READONLY_SCOPE } from './scope'
-import { buildOverallValuesUrl } from './sheetsUrl'
+import { buildSheetTitlesUrl, buildValuesBatchUrl } from './sheetsUrl'
 import { parseSpreadsheetId } from './spreadsheetId'
 
 const HEADERS = ['Month', 'Bought', 'Sold', 'Unresolved', 'Unresolved Cost', 'Profit', 'Notes']
@@ -16,6 +16,8 @@ describe('readMonthYear', () => {
     assert.equal(readMonthYear('Sept 2026'), 2026)
     assert.equal(readMonthYear('June 2024'), 2024)
     assert.equal(readMonthYear('July 2024'), 2024)
+    assert.equal(readMonthYear('Jan-2026'), 2026)
+    assert.deepEqual(readMonthCell('January 2026'), { month: 0, year: 2026 })
     assert.equal(readMonthYear('January 2026'), 2026)
     assert.equal(readMonthYear('September 2026'), 2026)
     assert.equal(readMonthYear('Ja 2026'), 2026)
@@ -151,119 +153,146 @@ describe('yearlyOverviewForSheet', () => {
     assert.equal(earlier.profit, 10)
   })
 
-  it('uses the latest sheet year when the current year is absent', () => {
-    assert.equal(chooseYear([2024, 2025], null, 2026), 2025)
+  it('defaults to the current year and can total every year', () => {
+    assert.equal(chooseYear([2024, 2025], null, 2026), 2026)
     assert.equal(chooseYear([2024, 2025, 2026], 2025, 2026), 2025)
-    const overview = yearlyOverviewForSheet([HEADERS, ['June 2024', 1, 1, 1, 1, 8]], null, 2026)
-    assert.equal(overview.status, 'ready')
-    if (overview.status !== 'ready') return
-    assert.equal(overview.year, 2024)
+    assert.equal(chooseYear([2024, 2025], 'all', 2026), 'all')
+    const missing = yearlyOverviewForSheet([HEADERS, ['June 2024', 1, 1, 1, 1, 8]], null, 2026)
+    assert.equal(missing.status, 'empty')
+    if (missing.status !== 'empty') return
+    assert.equal(missing.year, 2026)
+    assert.deepEqual(missing.years, [2024, 2026])
+
+    const all = yearlyOverviewForSheet(
+      [HEADERS, ['June 2024', 1, 2, 1, 1, 8], ['Jan 2026', 3, 4, 1, 1, 10], ['nope', 9, 9, 9, 9, 9]],
+      'all',
+      2026
+    )
+    assert.equal(all.status, 'ready')
+    if (all.status !== 'ready') return
+    assert.equal(all.year, 'all')
+    assert.equal(all.profit, 18)
+    assert.equal(all.bought, 4)
+    assert.equal(all.sold, 6)
+
+    const bad = aggregateYearlyOverview(
+      [HEADERS, ['Jan 2026', 1, 1, 1, 1, 8], ['Jan 2024', 'bad', 1, 1, 1, 1]],
+      'all'
+    )
+    assert.equal(bad.status, 'error')
+    if (bad.status !== 'error') return
+    assert.equal(bad.message, 'Column B in row 3 is not a number.')
+
+    const emptyAll = aggregateYearlyOverview([HEADERS], 'all')
+    assert.deepEqual(emptyAll, { status: 'empty', year: 'all', years: [] })
   })
 })
 
 describe('monthlyOverviewForSheet', () => {
-  const zeros = Array<number>(12).fill(0)
+  const allMonths = [
+    ['', '', '', 'Sale price', '', 'Platform', 'Profit', 'Month'],
+    ['', '', '', 40, '', 'eBay', 12, 'Jan-2026'],
+    ['', '', '', 10, '', 'Card Show', 5, 'January 2026'],
+    ['', '', '', 7, '', 'Shop', 3, 'March 2025'],
+    ['', '', '', 4, '', 'Fanatics', '', 'Sept-2026']
+  ]
+  const monthSheets = [
+    {
+      title: 'Jan-2026',
+      rows: [
+        ['', '', 'Purchase price', '', 'Source'],
+        ['', '', 20, '', 'eBay'],
+        ['', '', 8, '', 'Card Show'],
+        ['', '', '', '', 'Fanatics']
+      ]
+    },
+    {
+      title: 'June 2024',
+      rows: [['', '', 15, '', 'Alt']]
+    }
+  ]
 
-  it('charts every month and reads sale volume from column G', () => {
-    const result = monthlyOverviewForSheet(
-      [
-        HEADERS,
-        ['Jan 2026', 10, 999, 1, 1, 5, 40],
-        ['September 2026', 0, 999, 0, 0, -8, ''],
-        ['March 2025', 7, 7, 7, 7, 7, 7],
-        ['Ju 2026', 50, 50, 50, 50, 50, 50]
-      ],
-      null,
-      2026
-    )
-
+  it('sums profit and sale volume by platform and purchase volume from month tabs', () => {
+    const result = monthlyOverviewForSheet(allMonths, monthSheets, null, 2026)
     assert.equal(result.status, 'ready')
     if (result.status !== 'ready') return
     assert.equal(result.year, 2026)
-    assert.equal(result.minYear, 2025)
+    assert.equal(result.minYear, 2024)
     assert.equal(result.maxYear, 2026)
-    assert.equal(result.bought[0], 10)
-    assert.equal(result.profit[0], 5)
-    assert.equal(result.sold[0], 40)
-    assert.equal(result.profit[8], -8)
-    assert.equal(result.sold[8], 0)
-    assert.equal(result.profit[1], 0)
-    assert.equal(result.bought[2], 0)
-    assert.deepEqual(result.profit.slice(1, 8), zeros.slice(1, 8))
+    assert.equal(result.profit.status, 'ready')
+    assert.equal(result.sale.status, 'ready')
+    assert.equal(result.purchase.status, 'ready')
+    if (result.profit.status !== 'ready' || result.sale.status !== 'ready' || result.purchase.status !== 'ready') return
+    assert.equal(result.profit.values.All[0], 17)
+    assert.equal(result.profit.values.eBay[0], 12)
+    assert.equal(result.profit.values['Card Show'][0], 5)
+    assert.equal(result.sale.values.All[0], 50)
+    assert.equal(result.sale.values.eBay[0], 40)
+    assert.equal(result.profit.values.All[8], 0)
+    assert.equal(result.sale.values.Fanatics[8], 4)
+    assert.equal(result.purchase.values.All[0], 28)
+    assert.equal(result.purchase.values.eBay[0], 20)
+    assert.equal(result.purchase.values['Card Show'][0], 8)
+    assert.equal(result.purchase.values.All[1], 0)
+    assert.equal(result.profit.values.All[2], 0)
   })
 
-  it('uses a zero bar for a blank cell and stops on a duplicate month or a bad number', () => {
-    const blank = monthlyOverviewForSheet([['Feb 2026', '', 1, 1, 1, '', '']], 2026, 2026)
-    assert.equal(blank.status, 'ready')
-    if (blank.status !== 'ready') return
-    assert.equal(blank.bought[1], 0)
-    assert.equal(blank.profit[1], 0)
-    assert.equal(blank.sold[1], 0)
+  it('keeps unknown platforms in All, skips blank or non-numeric cells, and stops on a duplicate tab', () => {
+    const result = monthlyOverviewForSheet(allMonths, monthSheets, 2025, 2026)
+    assert.equal(result.status, 'ready')
+    if (result.status !== 'ready' || result.profit.status !== 'ready') return
+    assert.equal(result.profit.values.All[2], 3)
+    assert.equal(result.profit.values.eBay[2], 0)
 
-    const duplicate = monthlyOverviewForSheet(
+    const duplicate = monthlyOverviewForSheet(allMonths, [...monthSheets, { title: 'January 2026', rows: [] }], 2026, 2026)
+    assert.equal(duplicate.status, 'error')
+    if (duplicate.status !== 'error') return
+    assert.equal(duplicate.message, 'Jan 2026 appears more than once.')
+
+    const skipped = monthlyOverviewForSheet(
       [
-        ['Jan 2026', 1, 1, 1, 1, 1, 1],
-        ['January 2026', 2, 2, 2, 2, 2, 2]
+        ['', '', '', 10, '', 'eBay', 4, 'Mar-2026'],
+        ['', '', '', 'n/a', '', 'eBay', '', 'Mar-2026'],
+        ['', '', '', 6, '', 'Card Show', 'pending', 'Mar-2026']
       ],
+      [{ title: 'Mar-2026', rows: [['', '', 'Purchase price', '', 'Source'], ['', '', 9, '', 'eBay'], ['', '', 'n/a', '', 'eBay']] }],
       2026,
       2026
     )
-    assert.deepEqual(duplicate, {
-      status: 'error',
-      message: 'Jan 2026 appears more than once.',
-      year: 2026,
-      minYear: 2026,
-      maxYear: 2026
-    })
+    assert.equal(skipped.status, 'ready')
+    if (skipped.status !== 'ready' || skipped.profit.status !== 'ready' || skipped.sale.status !== 'ready' || skipped.purchase.status !== 'ready') return
+    assert.equal(skipped.profit.values.All[2], 4)
+    assert.equal(skipped.sale.values.All[2], 16)
+    assert.equal(skipped.purchase.values.eBay[2], 9)
 
-    const yearly = aggregateYearlyOverview(
-      [
-        ['Jan 2026', 1, 1, 1, 1, 4, 9],
-        ['January 2026', 1, 1, 1, 1, 6, 9]
-      ],
-      2026
-    )
-    assert.equal(yearly.status, 'ready')
-    if (yearly.status !== 'ready') return
-    assert.equal(yearly.profit, 10)
-
-    const bad = monthlyOverviewForSheet([['Mar 2026', 1, 1, 1, 1, 1, 'n/a']], 2026, 2026)
-    assert.equal(bad.status, 'error')
-    if (bad.status !== 'error') return
-    assert.equal(bad.message, 'Column G in row 1 is not a number.')
+    const missing = monthlyOverviewForSheet(null, monthSheets, 2026, 2026)
+    assert.equal(missing.status, 'ready')
+    if (missing.status !== 'ready') return
+    assert.equal(missing.profit.status, 'error')
+    if (missing.profit.status !== 'error') return
+    assert.equal(missing.profit.message, 'The spreadsheet has no AllMonths sheet.')
+    assert.equal(missing.purchase.status, 'ready')
   })
 
   it('defaults to the current year and can step through years with no rows', () => {
-    const rows = [
-      HEADERS,
-      ['June 2024', 3, 1, 1, 1, 8, 4]
-    ]
-    const current = monthlyOverviewForSheet(rows, null, 2026)
-    assert.equal(current.status, 'ready')
-    if (current.status !== 'ready') return
+    const current = monthlyOverviewForSheet(allMonths, monthSheets, null, 2026)
     assert.equal(current.year, 2026)
-    assert.equal(current.minYear, 2024)
-    assert.equal(current.maxYear, 2026)
-    assert.deepEqual(current.profit, zeros)
-
-    const gap = monthlyOverviewForSheet(rows, 2025, 2026)
+    const gap = monthlyOverviewForSheet(allMonths, monthSheets, 2025, 2026)
     assert.equal(gap.status, 'ready')
-    if (gap.status !== 'ready') return
+    if (gap.status !== 'ready' || gap.purchase.status !== 'ready') return
     assert.equal(gap.year, 2025)
-    assert.deepEqual(gap.bought, zeros)
+    assert.equal(gap.purchase.values.All[0], 0)
 
-    const earlier = monthlyOverviewForSheet(rows, 2020, 2026)
+    const earlier = monthlyOverviewForSheet([], [{ title: 'June 2024', rows: [['', '', 15, '', 'Alt']] }], 2020, 2026)
     assert.equal(earlier.year, 2024)
     assert.equal(earlier.status, 'ready')
-    if (earlier.status !== 'ready') return
-    assert.equal(earlier.bought[5], 3)
-    assert.equal(earlier.sold[5], 4)
-    assert.equal(earlier.profit[5], 8)
+    if (earlier.status !== 'ready' || earlier.purchase.status !== 'ready') return
+    assert.equal(earlier.purchase.values.Alt[5], 15)
 
-    const futureSheet = monthlyOverviewForSheet([['Jan 2028', 1, 1, 1, 1, 2, 3]], null, 2026)
-    assert.equal(futureSheet.year, 2026)
-    assert.equal(futureSheet.minYear, 2026)
-    assert.equal(futureSheet.maxYear, 2028)
+    const future = monthlyOverviewForSheet(null, [{ title: 'Jan-2028', rows: [] }], null, 2026)
+    assert.equal(future.year, 2026)
+    assert.equal(future.minYear, 2026)
+    assert.equal(future.maxYear, 2028)
   })
 })
 
@@ -282,7 +311,11 @@ describe('presentYearlyOverview', () => {
 
     assert.equal(presented.status, 'ready')
     if (presented.status !== 'ready') return
-    assert.equal(presented.profitLabel, 'Year-to-date profit')
+    assert.equal(presented.profitLabel, 'Profit')
+    assert.deepEqual(
+      presented.metrics.map((metric) => metric.label),
+      ['Purchase volume', 'Sale volume', 'Unresolved items', 'Unresolved costs']
+    )
     assert.equal(presented.profit, '$1,500.50')
     assert.deepEqual(
       presented.metrics.map((metric) => metric.value),
@@ -298,6 +331,10 @@ describe('presentYearlyOverview', () => {
       years: [],
       message: 'No Overall rows for 2026.'
     })
+    const all = presentYearlyOverview({ status: 'empty', year: 'all', years: [2024] })
+    assert.equal(all.status, 'empty')
+    if (all.status !== 'empty') return
+    assert.equal(all.message, 'No Overall rows.')
   })
 })
 
@@ -312,14 +349,19 @@ describe('spreadsheet id and read-only request', () => {
     assert.equal(parseSpreadsheetId('Overall'), null)
   })
 
-  it('builds a read of the Overall values and nothing else', () => {
-    const url = new URL(buildOverallValuesUrl('sheet-id'))
-    assert.equal(url.origin, 'https://sheets.googleapis.com')
-    assert.equal(url.pathname, '/v4/spreadsheets/sheet-id/values/Overall')
-    assert.equal(url.searchParams.get('valueRenderOption'), 'UNFORMATTED_VALUE')
-    assert.equal(url.searchParams.get('dateTimeRenderOption'), 'FORMATTED_STRING')
-    assert.equal(url.href.includes('batchUpdate'), false)
-    assert.equal(url.href.includes(':append'), false)
+  it('builds read-only requests for sheet titles and values', () => {
+    const titles = new URL(buildSheetTitlesUrl('sheet-id'))
+    assert.equal(titles.origin, 'https://sheets.googleapis.com')
+    assert.equal(titles.pathname, '/v4/spreadsheets/sheet-id')
+    assert.equal(titles.searchParams.get('fields'), 'sheets.properties.title')
+
+    const values = new URL(buildValuesBatchUrl('sheet-id', ['Overall', 'AllMonths', 'Jan-2026']))
+    assert.equal(values.pathname, '/v4/spreadsheets/sheet-id/values:batchGet')
+    assert.deepEqual(values.searchParams.getAll('ranges'), ['Overall', 'AllMonths', 'Jan-2026'])
+    assert.equal(values.searchParams.get('valueRenderOption'), 'UNFORMATTED_VALUE')
+    assert.equal(values.searchParams.get('dateTimeRenderOption'), 'FORMATTED_STRING')
+    assert.equal(values.href.includes('batchUpdate'), false)
+    assert.equal(values.href.includes(':append'), false)
     assert.equal(SPREADSHEETS_READONLY_SCOPE, 'https://www.googleapis.com/auth/spreadsheets.readonly')
   })
 })

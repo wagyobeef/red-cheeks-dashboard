@@ -1,22 +1,28 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { homeOverviewForSheet } from '../shared/aggregate'
+import { homeOverviewForSheet, type YearSelection } from '../shared/aggregate'
 import { parseSpreadsheetId } from '../shared/spreadsheetId'
 import { UserFacingError, logSafe } from './errors'
-import { getAccessToken, readOverallValues, signIn } from './google'
+import { getAccessToken, readWorkbook, signIn } from './google'
 import { clearRefreshToken, getConnectionState, getSecrets, saveConnection } from './store'
 
 const dirname = path.dirname(fileURLToPath(import.meta.url))
-let sheetCache: { spreadsheetId: string; rows: unknown[][] } | null = null
+let sheetCache: {
+  spreadsheetId: string
+  overall: unknown[][] | null
+  allMonths: unknown[][] | null
+  monthSheets: { title: string; rows: unknown[][] }[]
+} | null = null
 
 function clearSheetCache(): void {
   sheetCache = null
 }
 
-function requestedYear(input: unknown): number | null {
+function requestedYear(input: unknown): YearSelection | null {
   if (typeof input !== 'object' || input === null || !('year' in input)) return null
   const year = input.year
+  if (year === 'all') return 'all'
   return typeof year === 'number' && Number.isInteger(year) ? year : null
 }
 
@@ -97,13 +103,18 @@ function registerIpc(): void {
           }
           throw error
         }
-        sheetCache = {
-          spreadsheetId: secrets.spreadsheetId,
-          rows: await readOverallValues(accessToken, secrets.spreadsheetId)
-        }
+        const workbook = await readWorkbook(accessToken, secrets.spreadsheetId)
+        sheetCache = { spreadsheetId: secrets.spreadsheetId, ...workbook }
       }
       const today = new Date().getFullYear()
-      return homeOverviewForSheet(sheetCache.rows, requestedYear(input), requestedMonthlyYear(input), today)
+      return homeOverviewForSheet(
+        sheetCache.overall,
+        sheetCache.allMonths,
+        sheetCache.monthSheets,
+        requestedYear(input),
+        requestedMonthlyYear(input),
+        today
+      )
     } catch (error) {
       return { status: 'error' as const, message: userMessage(error, 'The spreadsheet could not be read.') }
     }

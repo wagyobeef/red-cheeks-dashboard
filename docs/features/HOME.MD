@@ -24,43 +24,53 @@ tampered with by the application.
 ## Initial Cards
 
 ### Yearly Overview
-- Year-to-date profit will be the primary metric
-- Other metrics shown in the yearly overview will be ytd volume (both bought and sold), number of unresolved items, and unresolved costs
+- Card that displays aggregated metrics, primarily for a particular year
+- Will also have the option to view metrics by `All`, which shows total metric values across all years
+- Year-to-date metrics will be aggregated along rows that have the same year, according to the Month indicator
+- Segemented selector allows user to choose the year with an `All` option at the end; selector defaults to current year
+- Title of card: `Yearly Overview`
+
+### Metrics
+- `Profit` (primary metric)
+- `Purchase volume`
+- `Sale volume`
+- `Unresolved items`
+- `Unresolved costs`
 
 ### Data Mapping
 
 Source sheet: `Overall`
 
 - Month indicator -> Column A (formatted month-year, e.g. `Jan 2026`)
-- Profit indicator ->  Column F
-- Number of Unresolved Items indicator -> Column D
-- Unresolved Costs indicator -> Column E
-- Buy Volume indicator -> Column B
-- Sale Volume indicator -> Column C
-
-YTD metrics will be aggregrated along rows that have the same year, according to the Month indicator
+- `Profit` indicator ->  Column F
+- `Purchase Volume` indicator  -> Column B
+- `Sale Volume` indicator -> Column C
+- `Unresolved items` indicator -> Column D
+- `Unresolved costs` indicator -> Column E
 
 ---
 
 ### Monthly Overview
-- Will display month-to-month metrics for a given year in the form of a bar chart
-- The bar chart spans each month of the calendar year with the height of the bars signifying the value of the chosen metric for that month for the given year
-- All months will show up on the axis of the bar chart regardless of whether data exists for it 
-- The metric can be chosen with a segmented selector, and the year can be toggled with chevrons on either side of the chart
+- Title of card: `Monthly Overview`
+- Displays month-to-month metrics for a given year in the form of a bar chart
+- On the left of the card will be a segmented selector to choose a desired metric (`Profit`, `Purchase Volume`, `Sale Volume`)
+- On the far right of the same row as the segmented selector will be dropdown for choosing the platform with the options:
+    - `All` (no platform filter)
+    - `Card Show`
+    - `eBay`
+    - `Fanatics`
+    - `Alt`
+    - `Goldin`
+- The bar chart spans each month of the calendar year with the height of the bars signifying the value of the chosen metric for that month, for the given year, and for the chosen platform
+- All months will show up on the x-axis of the bar chart regardless of whether data exists for it 
+- The y-axis will be marked with reasonable scaling
+- The year is toggled by chevrons on either side of the chart
 - The chart defaults to the current year
 - When a bar is hovered over, it should show the exact value of the bar
 
-#### Data Mapping
-
-Source sheet: `Overall`
-
-- Month + Year Indicator -> Column A (formatted month-year, e.g. `Jan 2026`)
-- Note: since month abbreviations might vary, match the month abbreviation to which month it is a prefix for
-
-Metrics:
-- `Profit` -> Column F
-- `Sale Volume` -> Column G
-- `Buy Volume` -> Column B
-
-- Bar Height -> the cell value at the row of the month + year and column of the chosen metric
-
+#### Calculating Metrics for Each Bar
+- Note: `Month indicator` refers to a formatted month + year that represents the month that a particular bar is representing (e.g. `Jan-2026`). Since month abbreviations might vary, match the month abbreviation to which month it is a prefix for
+- Note: if a cell that is being summed is not a number or does not have a value, exclude it from the summation
+- Calculating `Profit`: go to the `AllMonths` sheet. Sum up the profit column (Column G), filtered by rows that match the month indicator (Column H) and platform (Column F)
+- Calculating `Purchase Volume`: go to the sheet corresponding to the month indicator. In that sheet, sum up the Purchase price column (Column C), filtered by the Source Column (Column E), which is defined by the platform selector
+- Calculating `Sale Volume`: go to the `AllMonths` sheet. Sum up the Sale price column (Column D), filtered by rows that match the month indicator (Column H) and platform (Column F)

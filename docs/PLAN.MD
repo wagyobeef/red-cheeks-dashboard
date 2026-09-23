@@ -6,19 +6,24 @@ Approved plan for the initial Home screen. This is the current implementation ef
 
 The Home screen shows a Yearly Overview card and a Monthly Overview card.
 
-Year-to-date profit is the primary yearly figure. Buy volume, sale volume, unresolved item count, and unresolved cost sit with it. All five numbers are sums of `Overall` rows for the selected year. The yearly card lists every year found in the sheet. The current calendar year is selected when it is present; otherwise the latest year in the sheet is selected. Choosing another year shows that year's totals. A blank number counts as zero. A value that is not a number stops that card and names the problem. Rows with an unreadable month are excluded. A year with no readable rows is an empty state, separate from a real total of zero. Two rows in the same month are both included in the yearly sums.
+The yearly card is titled Yearly Overview. Profit is the primary figure. Purchase volume, sale volume, unresolved items, and unresolved costs sit with it. A segmented control lists the years in the sheet, includes the current calendar year when it is missing, and ends with All. The current calendar year is selected by default. A chosen year sums `Overall` rows for that year. All sums every readable row. A blank number counts as zero. A value that is not a number stops that card and names the problem. Rows with an unreadable month are excluded. A year, or All, with no readable rows is an empty state, separate from a real total of zero. Two rows in the same month are both included in the yearly sums. Choosing a year or All does not change the monthly chart.
 
-The monthly card is a bar chart for its own year. It starts on the current calendar year. Chevrons on either side of the chart move one year at a time, from the earlier of the current year and the earliest sheet year through the later of the current year and the latest sheet year. A segmented control chooses Profit, Sale volume, or Buy volume, and Profit is selected first. January through December are always on the axis. The bar is the single cell for that month and year. A missing month or a blank cell is zero. Hovering a bar shows its exact dollar value. The chart has a dollar y-axis so the bar heights can be read without hovering. A negative value draws below a zero line. A second row for the same month and year stops the monthly card and names that month. A non-numeric value in column B, F, or G on a row for the displayed year stops the monthly card and names the column and row. Changing the metric or the monthly year uses the sheet already loaded.
+The monthly card is titled Monthly Overview. It is a bar chart for its own year and starts on the current calendar year. Chevrons on either side of the chart move one year at a time, from the earlier of the current year and the earliest monthly year through the later of the current year and the latest monthly year. Profit, Purchase Volume, and Sale Volume are on the left. A platform menu on the right of that row offers All, Card Show, eBay, Fanatics, Alt, and Goldin. All includes every platform. Profit is selected first. January through December are always on the axis. Hovering a bar shows its exact dollar value. The chart has a dollar y-axis. A negative value draws below a zero line. Changing the metric, platform, or monthly year uses the sheets already loaded.
 
 Columns on `Overall`, by position:
 
 - Month: column A, a month-year such as `Jan 2026`. The month token matches when it is a unique prefix of one full month name, so `Sept` and `September` both mean September.
-- Buy volume: column B. The yearly and monthly cards both use it.
-- Yearly sale volume: column C
-- Unresolved items: column D
-- Unresolved cost: column E
-- Profit: column F. The yearly and monthly cards both use it.
-- Monthly sale volume: column G
+- Purchase volume: column B on `Overall` for the yearly card
+- Yearly sale volume: column C on `Overall`
+- Unresolved items: column D on `Overall`
+- Unresolved cost: column E on `Overall`
+- Yearly profit: column F on `Overall`
+
+Monthly values come from other tabs:
+
+- `AllMonths` column H is the month, such as `Jan-2026` or `January 2026`. Column F is the platform. Column G is profit. Column D is sale price.
+- Each month has a tab named the same way as its month indicator. Column C is the purchase price. Column E is the platform.
+- A missing month tab is a zero purchase bar. Two tabs for the same month stop the monthly card and name that month. A summed cell that is blank or not a number is left out of the total.
 
 A first row whose column A is not a month-year is a header and is ignored. Later rows with an unreadable month are excluded from the totals.
 
@@ -56,8 +61,8 @@ New code under `src/main`, `src/preload`, and `src/renderer`, plus `package.json
 - The app opens as a desktop window with a sidebar and the Yearly Overview card.
 - The user can save a spreadsheet URL or id locally and sign in with Google.
 - The granted scope is spreadsheets read-only, and the code only reads values.
-- The yearly card lists the years in `Overall` and shows sums for the selected year: profit, bought, sold, unresolved count, and unresolved cost. The current calendar year is selected when it is in the sheet.
-- The monthly card charts January through December for its own year, defaulting to the current calendar year. Profit, sale volume from column G, and buy volume can be selected. Hovering a bar shows its exact value.
+- The yearly card is titled Yearly Overview. Its segmented control lists sheet years, the current calendar year, and All. It shows profit, purchase volume, sale volume, unresolved items, and unresolved costs for the selected year, or across every readable row when All is selected.
+- The monthly card charts January through December for its own year, defaulting to the current calendar year. Profit and sale volume come from `AllMonths`. Purchase volume comes from each month tab. A platform menu filters those sums. Hovering a bar shows its exact value.
 - Missing setup, auth failure, a missing tab, and a year with no rows are visible and do not appear as a zero total.
 - Secrets and tokens are not committed.
 - Unit tests cover month parsing and the yearly sums.
@@ -74,6 +79,6 @@ Unit tests for parsing and aggregation, then a local launch to check the sidebar
 - [x] Read `Overall`, list sheet years, and aggregate the selected year
 - [x] Yearly Overview card, including empty and error states
 - [x] Unit tests for month parsing and yearly sums
-- [x] Monthly chart for the selected year, including column G, the 12-month axis, and hover values
+- [x] Monthly chart from `AllMonths` and month tabs, with a platform filter
 
 Verified with unit tests, an Electron smoke check of the setup form, and a desktop layout pass of the setup screen, yearly totals, empty year, and missing-column error. A live read of the sheet still needs the user's Google OAuth client and spreadsheet.

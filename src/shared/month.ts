@@ -25,7 +25,7 @@ function monthIndex(token: string): number | null {
 /** Reads a month-year cell. The month token must be a unique prefix of one full month name. */
 export function readMonthCell(value: unknown): MonthCell | null {
   if (typeof value !== 'string') return null
-  const normalized = value.replace(/\u00a0/g, ' ').trim()
+  const normalized = value.replace(/\u00a0/g, ' ').replace(/-/g, ' ').trim()
   const match = /^([A-Za-z]+)\s+(\d{4})$/.exec(normalized)
   if (!match) return null
   const month = monthIndex(match[1].toLowerCase())

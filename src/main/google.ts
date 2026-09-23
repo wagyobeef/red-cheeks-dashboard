@@ -3,7 +3,8 @@ import { CodeChallengeMethod, OAuth2Client } from 'google-auth-library'
 import http from 'node:http'
 import crypto from 'node:crypto'
 import { SPREADSHEETS_READONLY_SCOPE } from '../shared/scope'
-import { buildOverallValuesUrl } from '../shared/sheetsUrl'
+import { readMonthCell } from '../shared/month'
+import { buildSheetTitlesUrl, buildValuesBatchUrl } from '../shared/sheetsUrl'
 import { UserFacingError, googleErrorCode, logSafe } from './errors'
 import { getSecrets, saveRefreshToken } from './store'
 
@@ -196,20 +197,58 @@ function sheetsStatusMessage(status: number): string {
   if (status === 401) return 'Sign in again to read the spreadsheet.'
   if (status === 403) return 'This Google account cannot read that spreadsheet.'
   if (status === 404) return 'That spreadsheet was not found.'
-  if (status === 400) return 'The spreadsheet has no Overall tab.'
+  if (status === 400) return 'The spreadsheet could not be read.'
   return 'The spreadsheet could not be read.'
 }
 
-export async function readOverallValues(accessToken: string, spreadsheetId: string): Promise<unknown[][]> {
-  const response = await fetch(buildOverallValuesUrl(spreadsheetId), {
+export type WorkbookValues = {
+  overall: unknown[][] | null
+  allMonths: unknown[][] | null
+  monthSheets: { title: string; rows: unknown[][] }[]
+}
+
+function sheetRows(values: unknown): unknown[][] {
+  if (!Array.isArray(values)) return []
+  return values.filter((row): row is unknown[] => Array.isArray(row))
+}
+
+export async function readWorkbook(accessToken: string, spreadsheetId: string): Promise<WorkbookValues> {
+  const headers = { Authorization: `Bearer ${accessToken}` }
+  const metadata = await fetch(buildSheetTitlesUrl(spreadsheetId), {
     method: 'GET',
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers,
     signal: AbortSignal.timeout(20_000)
   })
+  if (!metadata.ok) throw new UserFacingError(sheetsStatusMessage(metadata.status))
 
-  if (!response.ok) throw new UserFacingError(sheetsStatusMessage(response.status))
+  const listed = (await metadata.json()) as { sheets?: { properties?: { title?: unknown } }[] }
+  const titles = (listed.sheets ?? [])
+    .map((sheet) => sheet.properties?.title)
+    .filter((title): title is string => typeof title === 'string' && title !== '')
+  const monthTitles = titles.filter((title) => readMonthCell(title) !== null)
+  const ranges = [
+    ...(titles.includes('Overall') ? ['Overall'] : []),
+    ...(titles.includes('AllMonths') ? ['AllMonths'] : []),
+    ...monthTitles
+  ]
+  if (ranges.length === 0) return { overall: null, allMonths: null, monthSheets: [] }
 
-  const body = (await response.json()) as { values?: unknown }
-  if (!Array.isArray(body.values)) return []
-  return body.values.filter((row): row is unknown[] => Array.isArray(row))
+  const values = await fetch(buildValuesBatchUrl(spreadsheetId, ranges), {
+    method: 'GET',
+    headers,
+    signal: AbortSignal.timeout(20_000)
+  })
+  if (!values.ok) throw new UserFacingError(sheetsStatusMessage(values.status))
+
+  const body = (await values.json()) as { valueRanges?: { values?: unknown }[] }
+  const byTitle = new Map<string, unknown[][]>()
+  ranges.forEach((title, index) => {
+    byTitle.set(title, sheetRows(body.valueRanges?.[index]?.values))
+  })
+
+  return {
+    overall: titles.includes('Overall') ? (byTitle.get('Overall') ?? []) : null,
+    allMonths: titles.includes('AllMonths') ? (byTitle.get('AllMonths') ?? []) : null,
+    monthSheets: monthTitles.map((title) => ({ title, rows: byTitle.get(title) ?? [] }))
+  }
 }

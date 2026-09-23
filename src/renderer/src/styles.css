@@ -24,7 +24,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -86,45 +87,42 @@ input {
 
 .card-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
 }
 
-.card-titles {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
-
-.years {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-button.year {
-  padding: 2px 8px;
-  border: none;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 650;
-}
-
-button.year.is-selected {
-  background: var(--accent);
-  color: var(--accent-ink);
-}
-
 .segmented {
   display: inline-flex;
-  margin-top: 14px;
+  flex-wrap: wrap;
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow: hidden;
+}
+
+.metric-selector,
+.year-selector {
+  margin-top: 14px;
+}
+
+.monthly-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.monthly-toolbar .metric-selector {
+  margin-top: 0;
+}
+
+select.platform {
+  padding: 6px 10px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
 }
 
 button.segment {
@@ -304,6 +302,7 @@ input {
 }
 
 input:focus,
+select:focus,
 button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

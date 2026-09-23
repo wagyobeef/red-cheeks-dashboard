@@ -13,9 +13,11 @@ type MetricField = (typeof METRIC_COLUMNS)[number]['field']
 
 const USED_WIDTH = 6
 
+export type YearSelection = number | 'all'
+
 export type YearlyTotals = {
   status: 'ready'
-  year: number
+  year: YearSelection
   profit: number
   bought: number
   sold: number
@@ -25,7 +27,7 @@ export type YearlyTotals = {
 
 export type YearlyOverview =
   | (YearlyTotals & { years: number[] })
-  | { status: 'empty'; year: number; years: number[] }
+  | { status: 'empty'; year: YearSelection; years: number[] }
   | { status: 'error'; message: string; years?: number[] }
 
 function isBlank(value: unknown): boolean {
@@ -61,23 +63,30 @@ export function listSheetYears(rows: unknown[][]): number[] {
   return [...years].sort((left, right) => left - right)
 }
 
-export function chooseYear(years: number[], requested: number | null, today: number): number {
-  if (requested !== null && years.includes(requested)) return requested
-  if (years.includes(today)) return today
-  return years[years.length - 1] ?? today
+export function yearOptions(years: number[], today: number): number[] {
+  return [...new Set([...years, today])].sort((left, right) => left - right)
+}
+
+export function chooseYear(years: number[], requested: YearSelection | null, today: number): YearSelection {
+  if (requested === 'all') return 'all'
+  if (typeof requested === 'number' && (years.includes(requested) || requested === today)) return requested
+  return today
 }
 
 export function yearlyOverviewForSheet(
   rows: unknown[][],
-  requestedYear: number | null,
+  requestedYear: YearSelection | null,
   today: number
 ): YearlyOverview {
-  const years = listSheetYears(rows)
-  const overview = aggregateYearlyOverview(rows, chooseYear(years, requestedYear, today))
-  return { ...overview, years }
+  if (rows.length === 0) {
+    return { status: 'error', message: 'The Overall tab is empty.', years: [] }
+  }
+  const sheetYears = listSheetYears(rows)
+  const overview = aggregateYearlyOverview(rows, chooseYear(sheetYears, requestedYear, today))
+  return { ...overview, years: yearOptions(sheetYears, today) }
 }
 
-export function aggregateYearlyOverview(rows: unknown[][], year: number): YearlyOverview {
+export function aggregateYearlyOverview(rows: unknown[][], year: YearSelection): YearlyOverview {
   if (rows.length === 0) {
     return { status: 'error', message: 'The Overall tab is empty.', years: [] }
   }
@@ -99,7 +108,7 @@ export function aggregateYearlyOverview(rows: unknown[][], year: number): Yearly
     if (isBlankRow(row)) continue
 
     const rowYear = readMonthYear(row[MONTH.index])
-    if (rowYear === null || rowYear !== year) continue
+    if (rowYear === null || (year !== 'all' && rowYear !== year)) continue
 
     const sheetRow = index + 1
     for (const column of METRIC_COLUMNS) {
@@ -115,23 +124,112 @@ export function aggregateYearlyOverview(rows: unknown[][], year: number): Yearly
   return { status: 'ready', year, years, ...totals }
 }
 
-/** Monthly sale volume is column G. Yearly sale volume stays column C. */
-const MONTHLY_COLUMNS = [
-  { field: 'bought', index: 1, label: 'Column B' },
-  { field: 'profit', index: 5, label: 'Column F' },
-  { field: 'sold', index: 6, label: 'Column G' }
-] as const
+export const PLATFORM_OPTIONS = ['All', 'Card Show', 'eBay', 'Fanatics', 'Alt', 'Goldin'] as const
 
-type MonthlyField = (typeof MONTHLY_COLUMNS)[number]['field']
+export type PlatformOption = (typeof PLATFORM_OPTIONS)[number]
+
+const NAMED_PLATFORMS = PLATFORM_OPTIONS.filter((platform) => platform !== 'All')
+
+export type PlatformSeries = Record<PlatformOption, number[]>
+
+export type MonthlyMetricSeries = { status: 'ready'; values: PlatformSeries } | { status: 'error'; message: string }
+
+export type MonthSheet = { title: string; rows: unknown[][] }
 
 export type MonthlyOverview = {
   year: number
   minYear: number
   maxYear: number
 } & (
-  | { status: 'ready'; profit: number[]; bought: number[]; sold: number[] }
+  | { status: 'ready'; profit: MonthlyMetricSeries; purchase: MonthlyMetricSeries; sale: MonthlyMetricSeries }
   | { status: 'error'; message: string }
 )
+
+const ALL_MONTHS_SALE = 3
+const ALL_MONTHS_PLATFORM = 5
+const ALL_MONTHS_PROFIT = 6
+const ALL_MONTHS_MONTH = 7
+const PURCHASE_PRICE = 2
+const PURCHASE_SOURCE = 4
+
+function emptyPlatformSeries(): PlatformSeries {
+  return {
+    All: Array<number>(12).fill(0),
+    'Card Show': Array<number>(12).fill(0),
+    eBay: Array<number>(12).fill(0),
+    Fanatics: Array<number>(12).fill(0),
+    Alt: Array<number>(12).fill(0),
+    Goldin: Array<number>(12).fill(0)
+  }
+}
+
+function namedPlatform(value: unknown): (typeof NAMED_PLATFORMS)[number] | null {
+  if (typeof value !== 'string') return null
+  const name = value.trim()
+  return NAMED_PLATFORMS.find((platform) => platform === name) ?? null
+}
+
+function addPlatformValue(series: PlatformSeries, platformCell: unknown, month: number, amount: number): void {
+  series.All[month] += amount
+  const platform = namedPlatform(platformCell)
+  if (platform) series[platform][month] += amount
+}
+
+function summable(value: unknown): number | null {
+  if (isBlank(value)) return null
+  const parsed = readMetric(value, 'Column', 1)
+  return typeof parsed === 'number' ? parsed : null
+}
+
+function monthlyYears(allMonths: unknown[][] | null, monthSheets: MonthSheet[]): number[] {
+  const years = new Set<number>()
+  for (const row of allMonths ?? []) {
+    const year = readMonthYear(row[ALL_MONTHS_MONTH])
+    if (year !== null) years.add(year)
+  }
+  for (const sheet of monthSheets) {
+    const year = readMonthYear(sheet.title)
+    if (year !== null) years.add(year)
+  }
+  return [...years].sort((left, right) => left - right)
+}
+
+function duplicateMonthSheet(monthSheets: MonthSheet[], year: number): string | null {
+  const seen = new Map<number, string>()
+  for (const sheet of monthSheets) {
+    const cell = readMonthCell(sheet.title)
+    if (cell === null || cell.year !== year) continue
+    if (seen.has(cell.month)) return `${MONTH_LABELS[cell.month]} ${year} appears more than once.`
+    seen.set(cell.month, sheet.title)
+  }
+  return null
+}
+
+function sumAllMonths(rows: unknown[][], year: number, column: number): PlatformSeries {
+  const series = emptyPlatformSeries()
+  for (const row of rows) {
+    const cell = readMonthCell(row[ALL_MONTHS_MONTH])
+    if (cell === null || cell.year !== year) continue
+    const parsed = summable(row[column])
+    if (parsed === null) continue
+    addPlatformValue(series, row[ALL_MONTHS_PLATFORM], cell.month, parsed)
+  }
+  return series
+}
+
+function sumPurchaseSheets(monthSheets: MonthSheet[], year: number): PlatformSeries {
+  const series = emptyPlatformSeries()
+  for (const sheet of monthSheets) {
+    const cell = readMonthCell(sheet.title)
+    if (cell === null || cell.year !== year) continue
+    for (const row of sheet.rows) {
+      const parsed = summable(row[PURCHASE_PRICE])
+      if (parsed === null) continue
+      addPlatformValue(series, row[PURCHASE_SOURCE], cell.month, parsed)
+    }
+  }
+  return series
+}
 
 export type HomeOverview = {
   yearly: YearlyOverview
@@ -155,57 +253,57 @@ function chooseMonthlyYear(years: number[], requested: number | null, today: num
 }
 
 export function monthlyOverviewForSheet(
-  rows: unknown[][],
+  allMonths: unknown[][] | null,
+  monthSheets: MonthSheet[],
   requestedYear: number | null,
   today: number
 ): MonthlyOverview {
-  const years = listSheetYears(rows)
+  const years = monthlyYears(allMonths, monthSheets)
   const bounds = monthlyYearBounds(years, today)
   const year = chooseMonthlyYear(years, requestedYear, today)
-  if (rows.length === 0) {
-    return { status: 'error', message: 'The Overall tab is empty.', year, ...bounds }
-  }
+  const duplicate = duplicateMonthSheet(monthSheets, year)
+  if (duplicate) return { status: 'error', message: duplicate, year, ...bounds }
 
-  const totals: Record<MonthlyField, number[]> = {
-    profit: Array<number>(12).fill(0),
-    bought: Array<number>(12).fill(0),
-    sold: Array<number>(12).fill(0)
-  }
-  const seen = new Set<number>()
+  const purchase = sumPurchaseSheets(monthSheets, year)
 
-  for (let index = 0; index < rows.length; index += 1) {
-    const row = rows[index] ?? []
-    const cell = readMonthCell(row[MONTH.index])
-    if (cell === null || cell.year !== year) continue
-    if (seen.has(cell.month)) {
-      return {
-        status: 'error',
-        message: `${MONTH_LABELS[cell.month]} ${year} appears more than once.`,
-        year,
-        ...bounds
-      }
-    }
-    seen.add(cell.month)
-
-    const sheetRow = index + 1
-    for (const column of MONTHLY_COLUMNS) {
-      const parsed = readMetric(row[column.index], column.label, sheetRow)
-      if (typeof parsed === 'string') return { status: 'error', message: parsed, year, ...bounds }
-      totals[column.field][cell.month] = parsed
+  const missingAllMonths = { status: 'error' as const, message: 'The spreadsheet has no AllMonths sheet.' }
+  if (allMonths === null) {
+    return {
+      status: 'ready',
+      year,
+      ...bounds,
+      profit: missingAllMonths,
+      purchase: { status: 'ready', values: purchase },
+      sale: missingAllMonths
     }
   }
 
-  return { status: 'ready', year, ...bounds, ...totals }
+  const profit = sumAllMonths(allMonths, year, ALL_MONTHS_PROFIT)
+  const sale = sumAllMonths(allMonths, year, ALL_MONTHS_SALE)
+
+  return {
+    status: 'ready',
+    year,
+    ...bounds,
+    profit: { status: 'ready', values: profit },
+    purchase: { status: 'ready', values: purchase },
+    sale: { status: 'ready', values: sale }
+  }
 }
 
 export function homeOverviewForSheet(
-  rows: unknown[][],
-  requestedYear: number | null,
+  overall: unknown[][] | null,
+  allMonths: unknown[][] | null,
+  monthSheets: MonthSheet[],
+  requestedYear: YearSelection | null,
   requestedMonthlyYear: number | null,
   today: number
 ): HomeOverview {
   return {
-    yearly: yearlyOverviewForSheet(rows, requestedYear, today),
-    monthly: monthlyOverviewForSheet(rows, requestedMonthlyYear, today)
+    yearly:
+      overall === null
+        ? { status: 'error', message: 'The spreadsheet has no Overall tab.', years: [] }
+        : yearlyOverviewForSheet(overall, requestedYear, today),
+    monthly: monthlyOverviewForSheet(allMonths, monthSheets, requestedMonthlyYear, today)
   }
 }

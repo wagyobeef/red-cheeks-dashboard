@@ -1,10 +1,10 @@
-import type { MonthlyOverview } from '../../shared/aggregate'
+import { PLATFORM_OPTIONS, type MonthlyOverview, type PlatformOption } from '../../shared/aggregate'
 import type { ConnectionState } from '../../shared/connection'
 import { MONTH_LABELS } from '../../shared/month'
 import { formatUsd, presentYearlyOverview, type PresentedOverview } from '../../shared/present'
 import './styles.css'
 
-type MonthlyMetric = 'profit' | 'bought' | 'sold'
+type MonthlyMetric = 'profit' | 'purchase' | 'sale'
 
 type Busy = 'save' | 'sign-in' | 'refresh' | null
 
@@ -29,15 +29,16 @@ let busy: Busy = null
 let overview: PresentedOverview | null = null
 let monthly: MonthlyOverview | null = null
 let sheetYears: number[] = []
-let selectedYear: number | null = null
+let selectedYear: number | 'all' | null = null
 let monthlyYear: number | null = null
 let selectedMetric: MonthlyMetric = 'profit'
+let selectedPlatform: PlatformOption = 'All'
 let overviewRequest = 0
 
 const MONTHLY_METRICS: { id: MonthlyMetric; label: string }[] = [
   { id: 'profit', label: 'Profit' },
-  { id: 'sold', label: 'Sale volume' },
-  { id: 'bought', label: 'Buy volume' }
+  { id: 'purchase', label: 'Purchase Volume' },
+  { id: 'sale', label: 'Sale Volume' }
 ]
 let form: FormValues = { clientId: '', clientSecret: '', spreadsheet: '' }
 
@@ -203,12 +204,13 @@ function setupCard(): HTMLElement {
 }
 
 function yearSwitcher(): HTMLElement {
-  const group = el('div', 'years')
+  const group = el('div', 'segmented year-selector')
   group.setAttribute('role', 'group')
   group.setAttribute('aria-label', 'Year')
-  for (const year of sheetYears) {
+  const choices: (number | 'all')[] = [...sheetYears, 'all']
+  for (const year of choices) {
     const selected = year === selectedYear
-    const node = el('button', selected ? 'year is-selected' : 'year', String(year))
+    const node = el('button', selected ? 'segment is-selected' : 'segment', year === 'all' ? 'All' : String(year))
     node.type = 'button'
     node.setAttribute('aria-pressed', selected ? 'true' : 'false')
     node.disabled = busy !== null
@@ -253,8 +255,27 @@ function yearChevron(direction: 'left' | 'right', year: number, limit: number): 
   return node
 }
 
+function platformSelector(): HTMLSelectElement {
+  const select = el('select', 'platform')
+  select.setAttribute('aria-label', 'Platform')
+  select.disabled = busy !== null
+  for (const platform of PLATFORM_OPTIONS) {
+    const option = el('option', undefined, platform)
+    option.value = platform
+    option.selected = platform === selectedPlatform
+    select.append(option)
+  }
+  select.addEventListener('change', () => {
+    const value = PLATFORM_OPTIONS.find((platform) => platform === select.value)
+    if (!value || value === selectedPlatform) return
+    selectedPlatform = value
+    render()
+  })
+  return select
+}
+
 function metricSelector(): HTMLElement {
-  const group = el('div', 'segmented')
+  const group = el('div', 'segmented metric-selector')
   group.setAttribute('role', 'group')
   group.setAttribute('aria-label', 'Metric')
   for (const metric of MONTHLY_METRICS) {
@@ -404,12 +425,14 @@ function monthlyCard(): HTMLElement {
     if (busy !== 'refresh' && overview?.status === 'error') {
       card.append(el('p', 'note error', overview.message))
     } else {
-      card.append(el('p', 'lede', 'Reading Overall…'))
+      card.append(el('p', 'lede', 'Reading the spreadsheet…'))
     }
     return card
   }
 
-  card.append(metricSelector())
+  const toolbar = el('div', 'monthly-toolbar')
+  toolbar.append(metricSelector(), platformSelector())
+  card.append(toolbar)
   const row = el('div', 'chart-row')
   row.append(yearChevron('left', monthly.year, monthly.minYear))
   const plot = el('div', 'chart-plot')
@@ -417,7 +440,8 @@ function monthlyCard(): HTMLElement {
   if (monthly.status === 'error') {
     plot.append(el('p', 'note error', monthly.message))
   } else {
-    plot.append(monthlyChart(monthly[selectedMetric], monthly.year))
+    const series = monthly[selectedMetric]
+    plot.append(series.status === 'error' ? el('p', 'note error', series.message) : monthlyChart(series.values[selectedPlatform], monthly.year))
   }
   row.append(plot, yearChevron('right', monthly.year, monthly.maxYear))
   card.append(row)
@@ -427,19 +451,17 @@ function monthlyCard(): HTMLElement {
 function yearlyCard(): HTMLElement {
   const card = el('section', 'card')
   const header = el('div', 'card-header')
-  const titles = el('div', 'card-titles')
-  if (sheetYears.length > 0) titles.append(yearSwitcher())
-  titles.append(el('h2', undefined, 'Yearly Overview'))
-  header.append(titles)
+  header.append(el('h2', undefined, 'Yearly Overview'))
   header.append(
     refreshButton(() => {
       void loadOverview(true)
     })
   )
   card.append(header)
+  if (sheetYears.length > 0) card.append(yearSwitcher())
 
   if (!overview || busy === 'refresh') {
-    card.append(el('p', 'lede', 'Reading Overall…'))
+    card.append(el('p', 'lede', 'Reading the spreadsheet…'))
     return card
   }
 
@@ -523,6 +545,7 @@ async function signOut(): Promise<void> {
   selectedYear = null
   monthlyYear = null
   selectedMetric = 'profit'
+  selectedPlatform = 'All'
   banner = null
   busy = null
   mode = 'setup'
@@ -563,6 +586,7 @@ async function loadOverview(refresh: boolean): Promise<void> {
     selectedYear = null
     monthlyYear = null
     selectedMetric = 'profit'
+    selectedPlatform = 'All'
   }
   render()
 }

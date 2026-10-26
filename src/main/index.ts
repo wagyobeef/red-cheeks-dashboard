@@ -1,9 +1,19 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, type WebContents } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homeOverviewForSheet, type YearSelection } from '../shared/aggregate'
+import type { LoadStep } from '../shared/fanatics'
 import { parseSpreadsheetId } from '../shared/spreadsheetId'
 import { UserFacingError, logSafe } from './errors'
+import {
+  fanaticsBoard,
+  hasStoredFanaticsSession,
+  openFanaticsListing,
+  parseFanaticsUpdate,
+  signInToFanatics,
+  signOutOfFanatics,
+  updateFanaticsItem
+} from './fanatics'
 import { getAccessToken, readWorkbook, signIn } from './google'
 import { clearRefreshToken, getConnectionState, getSecrets, saveConnection } from './store'
 
@@ -40,6 +50,13 @@ const smokeRun = process.env.RED_CHEEKS_SMOKE === '1'
 
 if (smokeRun) {
   app.setPath('userData', path.join(app.getPath('temp'), 'red-cheeks-dashboard-smoke'))
+}
+
+function fanaticsReport(sender: WebContents): (step: LoadStep) => void {
+  return (step) => {
+    if (sender.isDestroyed()) return
+    sender.send('fanatics:progress', step)
+  }
 }
 
 function userMessage(error: unknown, fallback: string): string {
@@ -83,6 +100,51 @@ function registerIpc(): void {
     clearRefreshToken()
     clearSheetCache()
     return { ok: true as const }
+  })
+
+  ipcMain.handle('fanatics:session', () => ({ signedIn: hasStoredFanaticsSession() }))
+
+  ipcMain.handle('fanatics:board', async (event, input: unknown) => {
+    try {
+      return await fanaticsBoard(requestedRefresh(input), fanaticsReport(event.sender))
+    } catch (error) {
+      return { status: 'error' as const, message: userMessage(error, 'Fanatics Collect could not be read.') }
+    }
+  })
+
+  ipcMain.handle('fanatics:sign-in', async (event) => {
+    try {
+      await signInToFanatics(fanaticsReport(event.sender))
+      return { ok: true as const }
+    } catch (error) {
+      return { ok: false as const, message: userMessage(error, 'Fanatics sign-in failed.') }
+    }
+  })
+
+  ipcMain.handle('fanatics:sign-out', async () => {
+    try {
+      await signOutOfFanatics()
+      return { ok: true as const }
+    } catch (error) {
+      return { ok: false as const, message: userMessage(error, 'Fanatics sign-out failed.') }
+    }
+  })
+
+  ipcMain.handle('fanatics:update', async (_event, input: unknown) => {
+    try {
+      return await updateFanaticsItem(parseFanaticsUpdate(input))
+    } catch (error) {
+      return { status: 'error' as const, message: userMessage(error, 'That bid could not be updated.') }
+    }
+  })
+
+  ipcMain.handle('fanatics:open', async (_event, url: unknown) => {
+    try {
+      await openFanaticsListing(typeof url === 'string' ? url : '')
+      return { ok: true as const }
+    } catch (error) {
+      return { ok: false as const, message: userMessage(error, 'That Fanatics listing could not be opened.') }
+    }
   })
 
   ipcMain.handle('overview:get', async (_event, input: unknown) => {
@@ -159,6 +221,11 @@ async function runSmoke(win: BrowserWindow): Promise<void> {
     document.querySelector('form button[type="button"]').click()
   `)
   checks.push(await waitForText(win, 'Saved.'))
+
+  await win.webContents.executeJavaScript(`
+    [...document.querySelectorAll('nav button')].find((button) => button.textContent === 'Fanatics Auctions').click()
+  `)
+  checks.push(await waitForText(win, 'Sign in to Fanatics Collect'))
 
   const text = await win.webContents.executeJavaScript('document.body.innerText')
   console.log(text)

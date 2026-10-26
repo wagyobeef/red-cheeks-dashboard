@@ -2,7 +2,10 @@ import { PLATFORM_OPTIONS, type MonthlyOverview, type PlatformOption } from '../
 import type { ConnectionState } from '../../shared/connection'
 import { MONTH_LABELS } from '../../shared/month'
 import { formatUsd, presentYearlyOverview, type PresentedOverview } from '../../shared/present'
+import { bindFanatics, fanaticsPanel, loadFanatics } from './fanaticsView'
 import './styles.css'
+
+type Tab = 'home' | 'fanatics'
 
 type MonthlyMetric = 'profit' | 'purchase' | 'sale'
 
@@ -24,6 +27,7 @@ let connection: ConnectionState = {
   signedIn: false
 }
 let mode: 'setup' | 'overview' = 'setup'
+let tab: Tab = 'home'
 let banner: { text: string; tone: 'info' | 'error' } | null = null
 let busy: Busy = null
 let overview: PresentedOverview | null = null
@@ -118,9 +122,7 @@ function render(): void {
   const sidebar = el('aside', 'sidebar')
   sidebar.append(el('h1', 'brand', 'Red Cheeks'))
   const nav = el('nav')
-  const home = el('div', 'nav-item', 'Home')
-  home.setAttribute('aria-current', 'page')
-  nav.append(home)
+  nav.append(navButton('Home', 'home'), navButton('Fanatics Auctions', 'fanatics'))
   sidebar.append(nav)
 
   if (connection.signedIn) {
@@ -144,10 +146,24 @@ function render(): void {
   }
 
   const content = el('main', 'content')
-  content.append(mode === 'setup' ? setupCard() : overviewStack())
+  content.append(tab === 'fanatics' ? fanaticsPanel() : mode === 'setup' ? setupCard() : overviewStack())
   shell.append(sidebar, content)
   appRoot.append(shell)
   document.documentElement.dataset.ready = 'true'
+}
+
+function navButton(label: string, id: Tab): HTMLButtonElement {
+  const node = el('button', tab === id ? 'nav-item is-selected' : 'nav-item', label)
+  node.type = 'button'
+  node.setAttribute('aria-current', tab === id ? 'page' : 'false')
+  node.addEventListener('click', () => {
+    if (tab === id) return
+    tab = id
+    banner = null
+    if (id === 'fanatics') void loadFanatics(false)
+    else render()
+  })
+  return node
 }
 
 function setupCard(): HTMLElement {
@@ -608,4 +624,5 @@ async function boot(): Promise<void> {
   render()
 }
 
+bindFanatics(render)
 void boot()

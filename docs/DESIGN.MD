@@ -9,6 +9,7 @@
 
 ## Layout
 - Persistent sidebar for navigating between tools
+- The selected tool is marked in the sidebar
 - Main content fills available screen space efficiently
 - Columnar with cards that encapsulate different pieces of information or functionality within tools
 

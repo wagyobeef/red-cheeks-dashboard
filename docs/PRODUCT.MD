@@ -40,3 +40,8 @@ The application consists of a persistent dashboard with separate tools accessibl
 ### Home
 
 - The Home tab serves as an overview of personal business data that is kept up to date on Google Sheets
+
+### Fanatics Auctions
+
+- The Fanatics Auctions tab shows the current Fanatics Collect weekly auction: winning and outbid counts, bid totals with the buyer's premium, and each active bid
+- Sign-in happens on Fanatics Collect's own page. The session token stays on this Mac and is used to read bids and to open a listing in Chrome already signed in

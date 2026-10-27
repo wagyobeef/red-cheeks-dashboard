@@ -6,6 +6,8 @@ import {
   fanaticsListingUrl,
   extensionTag,
   formatMarketComparison,
+  fanaticsCardUrl,
+  isFanaticsCardUrl,
   isFanaticsListingUrl,
   listingAuctionId,
   parseFanaticsListings,
@@ -317,6 +319,9 @@ describe('fanatics bids', () => {
     assert.deepEqual(parseMarketPrice('nope'), { ok: false })
     assert.equal(isFanaticsListingUrl('https://www.fanaticscollect.com/weekly/abc/card'), true)
     assert.equal(isFanaticsListingUrl('https://example.com/weekly/abc'), false)
+    assert.equal(isFanaticsCardUrl(fanaticsCardUrl('buy-now', 'lot-1', 'card')), true)
+    assert.equal(isFanaticsCardUrl(fanaticsCardUrl('collection', 'card-1')), true)
+    assert.equal(isFanaticsCardUrl('https://www.fanaticscollect.com/account'), false)
   })
 
   it('keeps finished steps and updates the bid page in place', () => {

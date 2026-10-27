@@ -3,6 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homeOverviewForSheet, type YearSelection } from '../shared/aggregate'
 import type { LoadStep } from '../shared/fanatics'
+import { sellingBoard } from './fanaticsSelling'
 import { parseSpreadsheetId } from '../shared/spreadsheetId'
 import { UserFacingError, logSafe } from './errors'
 import {
@@ -52,10 +53,10 @@ if (smokeRun) {
   app.setPath('userData', path.join(app.getPath('temp'), 'red-cheeks-dashboard-smoke'))
 }
 
-function fanaticsReport(sender: WebContents): (step: LoadStep) => void {
+function fanaticsReport(sender: WebContents, channel: 'fanatics:progress' | 'fanatics:selling-progress'): (step: LoadStep) => void {
   return (step) => {
     if (sender.isDestroyed()) return
-    sender.send('fanatics:progress', step)
+    sender.send(channel, step)
   }
 }
 
@@ -106,7 +107,7 @@ function registerIpc(): void {
 
   ipcMain.handle('fanatics:board', async (event, input: unknown) => {
     try {
-      return await fanaticsBoard(requestedRefresh(input), fanaticsReport(event.sender))
+      return await fanaticsBoard(requestedRefresh(input), fanaticsReport(event.sender, 'fanatics:progress'))
     } catch (error) {
       return { status: 'error' as const, message: userMessage(error, 'Fanatics Collect could not be read.') }
     }
@@ -114,7 +115,7 @@ function registerIpc(): void {
 
   ipcMain.handle('fanatics:sign-in', async (event) => {
     try {
-      await signInToFanatics(fanaticsReport(event.sender))
+      await signInToFanatics(fanaticsReport(event.sender, 'fanatics:progress'))
       return { ok: true as const }
     } catch (error) {
       return { ok: false as const, message: userMessage(error, 'Fanatics sign-in failed.') }
@@ -135,6 +136,14 @@ function registerIpc(): void {
       return await updateFanaticsItem(parseFanaticsUpdate(input))
     } catch (error) {
       return { status: 'error' as const, message: userMessage(error, 'That bid could not be updated.') }
+    }
+  })
+
+  ipcMain.handle('fanatics:selling', async (event, input: unknown) => {
+    try {
+      return await sellingBoard(requestedRefresh(input), fanaticsReport(event.sender, 'fanatics:selling-progress'))
+    } catch (error) {
+      return { status: 'error' as const, message: userMessage(error, 'Fanatics Collect could not be read.') }
     }
   })
 
@@ -226,6 +235,11 @@ async function runSmoke(win: BrowserWindow): Promise<void> {
     [...document.querySelectorAll('nav button')].find((button) => button.textContent === 'Fanatics Auctions').click()
   `)
   checks.push(await waitForText(win, 'Sign in to Fanatics Collect'))
+
+  await win.webContents.executeJavaScript(`
+    [...document.querySelectorAll('nav button')].find((button) => button.textContent === 'Fanatics Selling').click()
+  `)
+  checks.push(await waitForText(win, 'cards in your vault'))
 
   const text = await win.webContents.executeJavaScript('document.body.innerText')
   console.log(text)

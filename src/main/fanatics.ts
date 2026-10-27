@@ -2,7 +2,7 @@ import { BrowserWindow, session } from 'electron'
 import {
   bidPageLabel,
   buildFanaticsBoard,
-  isFanaticsListingUrl,
+  isFanaticsCardUrl,
   listingAuctionId,
   listingsPage,
   selectCurrentAuction,
@@ -147,9 +147,26 @@ async function writeCookie(name: string, token: string): Promise<void> {
   })
 }
 
+const sessionListeners: Array<() => void> = []
+
+export function whenFanaticsSessionCleared(listener: () => void): void {
+  sessionListeners.push(listener)
+}
+
+function notifySessionCleared(): void {
+  for (const listener of sessionListeners) {
+    try {
+      listener()
+    } catch (error) {
+      logSafe(error)
+    }
+  }
+}
+
 function clearSessionTokens(): void {
   clearStoredRefreshToken()
   clearBidCache()
+  notifySessionCleared()
   void fanaticsSession()
     .clearStorageData()
     .catch((error) => logSafe(error))
@@ -267,6 +284,46 @@ async function graphql(
     throw new UserFacingError('Sign in again to Fanatics Collect.')
   }
   return body
+}
+
+export async function fanaticsQuery(
+  operationName: string,
+  query: string,
+  variables: Record<string, unknown>,
+  report: Report = quiet
+): Promise<unknown> {
+  const token = await accessToken(report)
+  let response: Response
+  try {
+    response = await fetch(`${API_URL}?${operationName}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        authorization: `Bearer ${token}`,
+        'x-platform': 'web',
+        'x-platform-app': 'collect'
+      },
+      body: JSON.stringify({ operationName, query, variables }),
+      signal: AbortSignal.timeout(20_000)
+    })
+  } catch (error) {
+    logSafe(error)
+    throw new UserFacingError('Fanatics Collect could not be reached.')
+  }
+
+  if (response.status === 401 || response.status === 403) {
+    clearSessionTokens()
+    throw new UserFacingError('Sign in again to Fanatics Collect.')
+  }
+  if (!response.ok) throw new UserFacingError('Fanatics Collect could not be read.')
+
+  const body = (await response.json().catch(() => null)) as { data?: unknown; errors?: unknown[] } | null
+  if (!body?.data || typeof body.data !== 'object') {
+    if (body?.errors?.length) throw new UserFacingError('Fanatics Collect could not be read.')
+    clearSessionTokens()
+    throw new UserFacingError('Sign in again to Fanatics Collect.')
+  }
+  return body.data
 }
 
 function pageEdgeCount(payload: unknown): number {
@@ -414,7 +471,7 @@ function chromeCookie(name: string, value: string): ChromeCookie {
 }
 
 export async function openFanaticsListing(url: string): Promise<void> {
-  if (!isFanaticsListingUrl(url)) throw new UserFacingError('That Fanatics listing could not be opened.')
+  if (!isFanaticsCardUrl(url)) throw new UserFacingError('That Fanatics listing could not be opened.')
   const access = await accessToken(quiet)
   const refresh = readStoredRefreshToken()
   if (!refresh) throw new UserFacingError('Sign in again to Fanatics Collect.')
@@ -471,6 +528,7 @@ async function runFanaticsSignIn(report: Report): Promise<void> {
       report({ id: 'save', label: 'Saving your Fanatics session' })
       saveStoredRefreshToken(refresh)
       clearBidCache()
+      notifySessionCleared()
       if (!win.isDestroyed()) win.close()
       return
     }

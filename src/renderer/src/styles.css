@@ -428,6 +428,10 @@ button:disabled {
   grid-template-columns: 1fr 1fr;
 }
 
+.selling-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .fanatics-sign-out {
   margin-top: 18px;
 }
@@ -447,6 +451,45 @@ button:disabled {
   align-items: center;
   min-width: 820px;
   margin-top: 18px;
+}
+
+.bid-section.sell-listed {
+  grid-template-columns: minmax(220px, 1.7fr) 120px 100px 100px 96px 88px 96px 110px;
+  min-width: 1040px;
+}
+
+.bid-section.sell-pending {
+  grid-template-columns: minmax(200px, 1.6fr) 110px 96px 96px 96px 116px 96px 132px;
+  min-width: 1040px;
+}
+
+.bid-section.sell-shipping {
+  grid-template-columns: minmax(220px, 1fr);
+  min-width: 0;
+}
+
+.bid-section.sell-unlisted {
+  grid-template-columns: minmax(220px, 1.6fr) 100px 110px;
+  min-width: 480px;
+}
+
+.bid-section.sell-listed .bid-figure,
+.bid-section.sell-pending .bid-figure,
+.bid-section.sell-shipping .bid-figure,
+.bid-section.sell-unlisted .bid-figure,
+.bid-section.sell-pending .bid-status {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.bid-status.is-waiting {
+  color: #9a4f08;
+  background: #fde6cc;
+}
+
+.bid-status.is-in-progress {
+  color: #1d4e89;
+  background: #e5eef8;
 }
 
 .bid-section h3 {

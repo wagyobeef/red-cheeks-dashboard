@@ -3,9 +3,10 @@ import type { ConnectionState } from '../../shared/connection'
 import { MONTH_LABELS } from '../../shared/month'
 import { formatUsd, presentYearlyOverview, type PresentedOverview } from '../../shared/present'
 import { bindFanatics, fanaticsPanel, loadFanatics } from './fanaticsView'
+import { bindSelling, loadSelling, sellingPanel } from './sellingView'
 import './styles.css'
 
-type Tab = 'home' | 'fanatics'
+type Tab = 'home' | 'fanatics' | 'selling'
 
 type MonthlyMetric = 'profit' | 'purchase' | 'sale'
 
@@ -122,7 +123,7 @@ function render(): void {
   const sidebar = el('aside', 'sidebar')
   sidebar.append(el('h1', 'brand', 'Red Cheeks'))
   const nav = el('nav')
-  nav.append(navButton('Home', 'home'), navButton('Fanatics Auctions', 'fanatics'))
+  nav.append(navButton('Home', 'home'), navButton('Fanatics Auctions', 'fanatics'), navButton('Fanatics Selling', 'selling'))
   sidebar.append(nav)
 
   if (connection.signedIn) {
@@ -146,7 +147,8 @@ function render(): void {
   }
 
   const content = el('main', 'content')
-  content.append(tab === 'fanatics' ? fanaticsPanel() : mode === 'setup' ? setupCard() : overviewStack())
+  const panel = tab === 'fanatics' ? fanaticsPanel() : tab === 'selling' ? sellingPanel() : mode === 'setup' ? setupCard() : overviewStack()
+  content.append(panel)
   shell.append(sidebar, content)
   appRoot.append(shell)
   document.documentElement.dataset.ready = 'true'
@@ -161,6 +163,7 @@ function navButton(label: string, id: Tab): HTMLButtonElement {
     tab = id
     banner = null
     if (id === 'fanatics') void loadFanatics(false)
+    else if (id === 'selling') void loadSelling(false)
     else render()
   })
   return node
@@ -625,4 +628,5 @@ async function boot(): Promise<void> {
 }
 
 bindFanatics(render)
+bindSelling(render)
 void boot()

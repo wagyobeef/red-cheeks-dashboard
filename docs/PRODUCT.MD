@@ -44,4 +44,5 @@ The application consists of a persistent dashboard with separate tools accessibl
 ### Fanatics Auctions
 
 - The Fanatics Auctions tab shows the current Fanatics Collect weekly auction: winning and outbid counts, bid totals with the buyer's premium, and each active bid
-- Sign-in happens on Fanatics Collect's own page. The session token stays on this Mac and is used to read bids and to open a listing in Chrome already signed in
+- The Fanatics Selling tab shows the cards in the Fanatics vault: purchase-price total, listed cards, sales waiting on payment, cards being shipped back, and unlisted cards
+- Sign-in happens on Fanatics Collect's own page. The session token stays on this Mac and is shared by Auctions and Selling. It is used to read the account and to open a card in Chrome already signed in

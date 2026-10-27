@@ -109,6 +109,24 @@ export function isFanaticsListingUrl(value: string): boolean {
   }
 }
 
+const FANATICS_CARD_PREFIXES = ['/weekly/', '/premier/', '/fixed/', '/buy-now/', '/collection/i/']
+
+export function isFanaticsCardUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || url.hostname !== 'www.fanaticscollect.com') return false
+    return FANATICS_CARD_PREFIXES.some((prefix) => url.pathname.startsWith(prefix) && url.pathname.length > prefix.length)
+  } catch {
+    return false
+  }
+}
+
+export function fanaticsCardUrl(section: 'weekly' | 'premier' | 'fixed' | 'buy-now' | 'collection', id: string, slug = ''): string {
+  const root = section === 'collection' ? 'collection/i' : section
+  const base = `https://www.fanaticscollect.com/${root}/${encodeURIComponent(id)}`
+  return section !== 'collection' && slug ? `${base}/${encodeURIComponent(slug)}` : base
+}
+
 function decodeBase64Url(value: string): string {
   const padded = value.replace(/-/g, '+').replace(/_/g, '/')
   const base64 = padded.length % 4 === 0 ? padded : padded + '='.repeat(4 - (padded.length % 4))

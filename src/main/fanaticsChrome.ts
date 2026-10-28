@@ -11,27 +11,52 @@ export type ChromeCookie = {
   expires?: number
 }
 
-const LISTING_HOST = 'https://www.fanaticscollect.com'
+export type SignedInSite = {
+  id: string
+  host: string
+  domain: string
+}
 
-let tail: Promise<void> = Promise.resolve()
-let debugPort: number | null = null
-let reuseBlankTab = false
+export const fanaticsChromeSite: SignedInSite = {
+  id: 'fanatics',
+  host: 'https://www.fanaticscollect.com',
+  domain: '.fanaticscollect.com'
+}
 
-function enqueue(task: () => Promise<void>): Promise<void> {
-  const run = tail.then(task, task)
-  tail = run.then(
+type ChromeRuntime = {
+  tail: Promise<void>
+  debugPort: number | null
+  reuseBlankTab: boolean
+}
+
+const runtimes = new Map<string, ChromeRuntime>()
+
+function runtimeFor(site: SignedInSite): ChromeRuntime {
+  const existing = runtimes.get(site.id)
+  if (existing) return existing
+  const created: ChromeRuntime = { tail: Promise.resolve(), debugPort: null, reuseBlankTab: false }
+  runtimes.set(site.id, created)
+  return created
+}
+
+function enqueue(site: SignedInSite, task: () => Promise<void>): Promise<void> {
+  const runtime = runtimeFor(site)
+  const run = runtime.tail.then(task, task)
+  runtime.tail = run.then(
     () => undefined,
     () => undefined
   )
   return run
 }
 
-function profileDir(): string {
-  return path.join(app.getPath('userData'), 'fanatics-chrome')
+function profileDir(site: SignedInSite): string {
+  const name = site.id === 'fanatics' ? 'fanatics-chrome' : `${site.id}-chrome`
+  return path.join(app.getPath('userData'), name)
 }
 
-function portFile(): string {
-  return path.join(app.getPath('userData'), 'fanatics-chrome.port')
+function portFile(site: SignedInSite): string {
+  const name = site.id === 'fanatics' ? 'fanatics-chrome.port' : `${site.id}-chrome.port`
+  return path.join(app.getPath('userData'), name)
 }
 
 function chromeBinary(): string | null {
@@ -43,18 +68,19 @@ function chromeBinary(): string | null {
   return candidates.find((candidate) => fs.existsSync(candidate)) ?? null
 }
 
-function readPort(): number | null {
+function readPort(site: SignedInSite): number | null {
   try {
-    const port = Number(fs.readFileSync(portFile(), 'utf8').trim())
+    const port = Number(fs.readFileSync(portFile(site), 'utf8').trim())
     return Number.isInteger(port) && port > 0 && port < 65536 ? port : null
   } catch {
     return null
   }
 }
 
-function writePort(port: number): void {
-  fs.mkdirSync(path.dirname(portFile()), { recursive: true })
-  fs.writeFileSync(portFile(), String(port), { encoding: 'utf8', mode: 0o600 })
+function writePort(site: SignedInSite, port: number): void {
+  const file = portFile(site)
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, String(port), { encoding: 'utf8', mode: 0o600 })
 }
 
 function freePort(): Promise<number> {
@@ -69,7 +95,7 @@ function freePort(): Promise<number> {
   })
 }
 
-async function isFanaticsChrome(port: number): Promise<boolean> {
+async function isDebuggableChrome(port: number): Promise<boolean> {
   try {
     const response = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(400) })
     if (!response.ok) return false
@@ -83,27 +109,28 @@ async function isFanaticsChrome(port: number): Promise<boolean> {
 async function waitForChrome(port: number): Promise<boolean> {
   const deadline = Date.now() + 8_000
   while (Date.now() < deadline) {
-    if (await isFanaticsChrome(port)) return true
+    if (await isDebuggableChrome(port)) return true
     await delay(200)
   }
   return false
 }
 
-async function ensureChrome(): Promise<number> {
-  const saved = debugPort ?? readPort()
-  if (saved !== null && (await isFanaticsChrome(saved))) {
-    debugPort = saved
+async function ensureChrome(site: SignedInSite): Promise<number> {
+  const runtime = runtimeFor(site)
+  const saved = runtime.debugPort ?? readPort(site)
+  if (saved !== null && (await isDebuggableChrome(saved))) {
+    runtime.debugPort = saved
     return saved
   }
 
   const binary = chromeBinary()
   if (!binary) throw new UserFacingError('Google Chrome is needed to open this listing.')
   const port = await freePort()
-  fs.mkdirSync(profileDir(), { recursive: true })
+  fs.mkdirSync(profileDir(site), { recursive: true })
   const child = spawn(
     binary,
     [
-      `--user-data-dir=${profileDir()}`,
+      `--user-data-dir=${profileDir(site)}`,
       '--remote-debugging-address=127.0.0.1',
       `--remote-debugging-port=${port}`,
       '--remote-allow-origins=*',
@@ -116,9 +143,9 @@ async function ensureChrome(): Promise<number> {
   )
   child.unref()
   if (!(await waitForChrome(port))) throw new UserFacingError('Google Chrome could not be opened.')
-  debugPort = port
-  reuseBlankTab = true
-  writePort(port)
+  runtime.debugPort = port
+  runtime.reuseBlankTab = true
+  writePort(site, port)
   return port
 }
 
@@ -170,9 +197,10 @@ function command(socket: WebSocket, method: string, params: Record<string, unkno
   return result
 }
 
-async function listingSocket(port: number): Promise<string> {
-  if (reuseBlankTab) {
-    reuseBlankTab = false
+async function listingSocket(site: SignedInSite, port: number): Promise<string> {
+  const runtime = runtimeFor(site)
+  if (runtime.reuseBlankTab) {
+    runtime.reuseBlankTab = false
     const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(2_000) })
     const pages = (await response.json()) as { type?: string; url?: string; webSocketDebuggerUrl?: string }[]
     const blank = pages.find((page) => page.type === 'page' && page.url === 'about:blank' && page.webSocketDebuggerUrl)
@@ -189,22 +217,22 @@ async function listingSocket(port: number): Promise<string> {
   return page.webSocketDebuggerUrl
 }
 
-async function showListing(port: number, url: string, cookies: ChromeCookie[]): Promise<void> {
-  const socket = await connect(await listingSocket(port))
+async function showListing(site: SignedInSite, port: number, url: string, cookies: ChromeCookie[]): Promise<void> {
+  const socket = await connect(await listingSocket(site, port))
   try {
     for (const cookie of cookies) {
       const set = await command(socket, 'Network.setCookie', {
         name: cookie.name,
         value: cookie.value,
-        url: LISTING_HOST,
-        domain: '.fanaticscollect.com',
+        url: site.host,
+        domain: site.domain,
         path: '/',
         secure: true,
         httpOnly: false,
         sameSite: 'Lax',
         ...(cookie.expires ? { expires: cookie.expires } : {})
       })
-      if (set.success === false) throw new Error('Chrome did not keep the Fanatics session.')
+      if (set.success === false) throw new Error('Chrome did not keep the saved session.')
     }
     await command(socket, 'Page.enable')
     await command(socket, 'Page.navigate', { url })
@@ -214,9 +242,9 @@ async function showListing(port: number, url: string, cookies: ChromeCookie[]): 
   }
 }
 
-async function openNow(url: string, cookies: ChromeCookie[]): Promise<void> {
+async function openNow(site: SignedInSite, url: string, cookies: ChromeCookie[]): Promise<void> {
   try {
-    await showListing(await ensureChrome(), url, cookies)
+    await showListing(site, await ensureChrome(site), url, cookies)
   } catch (error) {
     if (error instanceof UserFacingError) throw error
     logSafe(error)
@@ -224,11 +252,12 @@ async function openNow(url: string, cookies: ChromeCookie[]): Promise<void> {
   }
 }
 
-async function closeNow(): Promise<void> {
-  const port = debugPort ?? readPort()
-  debugPort = null
-  reuseBlankTab = false
-  if (port !== null && (await isFanaticsChrome(port))) {
+async function closeNow(site: SignedInSite): Promise<void> {
+  const runtime = runtimeFor(site)
+  const port = runtime.debugPort ?? readPort(site)
+  runtime.debugPort = null
+  runtime.reuseBlankTab = false
+  if (port !== null && (await isDebuggableChrome(port))) {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(1_000) })
       const body = (await response.json()) as { webSocketDebuggerUrl?: string }
@@ -244,11 +273,11 @@ async function closeNow(): Promise<void> {
       logSafe(error)
     }
     const deadline = Date.now() + 3_000
-    while (Date.now() < deadline && (await isFanaticsChrome(port))) await delay(200)
+    while (Date.now() < deadline && (await isDebuggableChrome(port))) await delay(200)
   }
   try {
-    fs.rmSync(portFile(), { force: true })
-    fs.rmSync(profileDir(), { recursive: true, force: true })
+    fs.rmSync(portFile(site), { force: true })
+    fs.rmSync(profileDir(site), { recursive: true, force: true })
   } catch (error) {
     logSafe(error)
   }
@@ -258,10 +287,14 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-export function openSignedInChrome(url: string, cookies: ChromeCookie[]): Promise<void> {
-  return enqueue(() => openNow(url, cookies))
+export function openSignedInChrome(
+  url: string,
+  cookies: ChromeCookie[],
+  site: SignedInSite = fanaticsChromeSite
+): Promise<void> {
+  return enqueue(site, () => openNow(site, url, cookies))
 }
 
-export function closeSignedInChrome(): Promise<void> {
-  return enqueue(() => closeNow())
+export function closeSignedInChrome(site: SignedInSite = fanaticsChromeSite): Promise<void> {
+  return enqueue(site, () => closeNow(site))
 }

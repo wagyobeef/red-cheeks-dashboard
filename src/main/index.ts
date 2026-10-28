@@ -4,6 +4,17 @@ import { fileURLToPath } from 'node:url'
 import { homeOverviewForSheet, type YearSelection } from '../shared/aggregate'
 import type { LoadStep } from '../shared/fanatics'
 import { sellingBoard } from './fanaticsSelling'
+import {
+  altBoard,
+  hasStoredAltSession,
+  openAltListing,
+  parseAltUpdate,
+  parseAltWatch,
+  signInToAlt,
+  signOutOfAlt,
+  toggleAltWatch,
+  updateAltItem
+} from './alt'
 import { parseSpreadsheetId } from '../shared/spreadsheetId'
 import { UserFacingError, logSafe } from './errors'
 import {
@@ -53,7 +64,7 @@ if (smokeRun) {
   app.setPath('userData', path.join(app.getPath('temp'), 'red-cheeks-dashboard-smoke'))
 }
 
-function fanaticsReport(sender: WebContents, channel: 'fanatics:progress' | 'fanatics:selling-progress'): (step: LoadStep) => void {
+function progressReport(sender: WebContents, channel: 'fanatics:progress' | 'fanatics:selling-progress' | 'alt:progress'): (step: LoadStep) => void {
   return (step) => {
     if (sender.isDestroyed()) return
     sender.send(channel, step)
@@ -64,6 +75,11 @@ function userMessage(error: unknown, fallback: string): string {
   if (error instanceof UserFacingError) return error.message
   logSafe(error)
   return fallback
+}
+
+function requestedReshuffle(input: unknown): boolean {
+  if (typeof input !== 'object' || input === null || !('reshuffleWatching' in input)) return false
+  return input.reshuffleWatching === true
 }
 
 function registerIpc(): void {
@@ -107,7 +123,7 @@ function registerIpc(): void {
 
   ipcMain.handle('fanatics:board', async (event, input: unknown) => {
     try {
-      return await fanaticsBoard(requestedRefresh(input), fanaticsReport(event.sender, 'fanatics:progress'))
+      return await fanaticsBoard(requestedRefresh(input), progressReport(event.sender, 'fanatics:progress'))
     } catch (error) {
       return { status: 'error' as const, message: userMessage(error, 'Fanatics Collect could not be read.') }
     }
@@ -115,7 +131,7 @@ function registerIpc(): void {
 
   ipcMain.handle('fanatics:sign-in', async (event) => {
     try {
-      await signInToFanatics(fanaticsReport(event.sender, 'fanatics:progress'))
+      await signInToFanatics(progressReport(event.sender, 'fanatics:progress'))
       return { ok: true as const }
     } catch (error) {
       return { ok: false as const, message: userMessage(error, 'Fanatics sign-in failed.') }
@@ -141,7 +157,7 @@ function registerIpc(): void {
 
   ipcMain.handle('fanatics:selling', async (event, input: unknown) => {
     try {
-      return await sellingBoard(requestedRefresh(input), fanaticsReport(event.sender, 'fanatics:selling-progress'))
+      return await sellingBoard(requestedRefresh(input), progressReport(event.sender, 'fanatics:selling-progress'))
     } catch (error) {
       return { status: 'error' as const, message: userMessage(error, 'Fanatics Collect could not be read.') }
     }
@@ -153,6 +169,60 @@ function registerIpc(): void {
       return { ok: true as const }
     } catch (error) {
       return { ok: false as const, message: userMessage(error, 'That Fanatics listing could not be opened.') }
+    }
+  })
+
+  ipcMain.handle('alt:session', () => ({ signedIn: hasStoredAltSession() }))
+
+  ipcMain.handle('alt:board', async (event, input: unknown) => {
+    try {
+      return await altBoard(requestedRefresh(input), requestedReshuffle(input), progressReport(event.sender, 'alt:progress'))
+    } catch (error) {
+      return { status: 'error' as const, message: userMessage(error, 'Alt could not be read.') }
+    }
+  })
+
+  ipcMain.handle('alt:sign-in', async (event) => {
+    try {
+      await signInToAlt(progressReport(event.sender, 'alt:progress'))
+      return { ok: true as const }
+    } catch (error) {
+      return { ok: false as const, message: userMessage(error, 'Alt sign-in failed.') }
+    }
+  })
+
+  ipcMain.handle('alt:sign-out', async () => {
+    try {
+      await signOutOfAlt()
+      return { ok: true as const }
+    } catch (error) {
+      return { ok: false as const, message: userMessage(error, 'Alt sign-out failed.') }
+    }
+  })
+
+  ipcMain.handle('alt:update', async (_event, input: unknown) => {
+    try {
+      return await updateAltItem(parseAltUpdate(input))
+    } catch (error) {
+      return { status: 'error' as const, message: userMessage(error, 'That bid could not be updated.') }
+    }
+  })
+
+  ipcMain.handle('alt:watch', async (_event, input: unknown) => {
+    try {
+      const watch = parseAltWatch(input)
+      return await toggleAltWatch(watch.id, watch.watching)
+    } catch (error) {
+      return { status: 'error' as const, message: userMessage(error, 'That lot could not be updated on Alt.') }
+    }
+  })
+
+  ipcMain.handle('alt:open', async (_event, url: unknown) => {
+    try {
+      await openAltListing(typeof url === 'string' ? url : '')
+      return { ok: true as const }
+    } catch (error) {
+      return { ok: false as const, message: userMessage(error, 'That Alt listing could not be opened.') }
     }
   })
 
@@ -235,6 +305,11 @@ async function runSmoke(win: BrowserWindow): Promise<void> {
     [...document.querySelectorAll('nav button')].find((button) => button.textContent === 'Fanatics Auctions').click()
   `)
   checks.push(await waitForText(win, 'Sign in to Fanatics Collect'))
+
+  await win.webContents.executeJavaScript(`
+    [...document.querySelectorAll('nav button')].find((button) => button.textContent === 'Alt Auctions').click()
+  `)
+  checks.push(await waitForText(win, 'Sign in to Alt'))
 
   await win.webContents.executeJavaScript(`
     [...document.querySelectorAll('nav button')].find((button) => button.textContent === 'Fanatics Selling').click()

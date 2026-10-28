@@ -2,11 +2,12 @@ import { PLATFORM_OPTIONS, type MonthlyOverview, type PlatformOption } from '../
 import type { ConnectionState } from '../../shared/connection'
 import { MONTH_LABELS } from '../../shared/month'
 import { formatUsd, presentYearlyOverview, type PresentedOverview } from '../../shared/present'
+import { altPanel, bindAlt, loadAlt } from './altView'
 import { bindFanatics, fanaticsPanel, loadFanatics } from './fanaticsView'
 import { bindSelling, loadSelling, sellingPanel } from './sellingView'
 import './styles.css'
 
-type Tab = 'home' | 'fanatics' | 'selling'
+type Tab = 'home' | 'fanatics' | 'alt' | 'selling'
 
 type MonthlyMetric = 'profit' | 'purchase' | 'sale'
 
@@ -123,7 +124,12 @@ function render(): void {
   const sidebar = el('aside', 'sidebar')
   sidebar.append(el('h1', 'brand', 'Red Cheeks'))
   const nav = el('nav')
-  nav.append(navButton('Home', 'home'), navButton('Fanatics Auctions', 'fanatics'), navButton('Fanatics Selling', 'selling'))
+  nav.append(
+    navButton('Home', 'home'),
+    navButton('Fanatics Auctions', 'fanatics'),
+    navButton('Fanatics Selling', 'selling'),
+    navButton('Alt Auctions', 'alt')
+  )
   sidebar.append(nav)
 
   if (connection.signedIn) {
@@ -147,7 +153,8 @@ function render(): void {
   }
 
   const content = el('main', 'content')
-  const panel = tab === 'fanatics' ? fanaticsPanel() : tab === 'selling' ? sellingPanel() : mode === 'setup' ? setupCard() : overviewStack()
+  const panel =
+    tab === 'fanatics' ? fanaticsPanel() : tab === 'alt' ? altPanel() : tab === 'selling' ? sellingPanel() : mode === 'setup' ? setupCard() : overviewStack()
   content.append(panel)
   shell.append(sidebar, content)
   appRoot.append(shell)
@@ -163,6 +170,7 @@ function navButton(label: string, id: Tab): HTMLButtonElement {
     tab = id
     banner = null
     if (id === 'fanatics') void loadFanatics(false)
+    else if (id === 'alt') void loadAlt(false)
     else if (id === 'selling') void loadSelling(false)
     else render()
   })
@@ -628,5 +636,6 @@ async function boot(): Promise<void> {
 }
 
 bindFanatics(render)
+bindAlt(render)
 bindSelling(render)
 void boot()

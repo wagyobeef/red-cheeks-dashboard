@@ -27,7 +27,7 @@ Fanatics Collect has an existing "Bids" tab on their site, where the majority of
 
 ## Bidding List
 We want a condensed view of all the active bids for the current auction cycle. Each item row will include the following information:
-1. Item naame
+1. Item name
 2. Current bid INCLUDING buyer's premium
 3. User's max bid INCLUDING buyer's premium
 Each row will be clickable. Clicking a row opens that listing in Google Chrome using the saved Fanatics session, so the lot can be bid on immediately. Each row will also have an input, where the user can input the item's market price. If there is a market price inputted, we will show the profit potential, which is the market price minus the maximum of: the user's max bid and current bid, and also the percentage of the maximum of the max bid and the current bid over the market price. Each row shows a green Winning tag or an orange Outbid tag. Once extended bidding has started, each row also shows whether that lot was extended to the next window or still needs a bid to extend. The item name uses two lines.

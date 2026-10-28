@@ -1,56 +1,54 @@
-# Fanatics Selling implementation plan
+# Alt Auctions implementation plan
 
-Approved plan for the Fanatics Selling tab, as specified in `docs/features/FANATICS-SELLING.MD`.
+Approved plan for the Alt Auctions tab, as specified in `docs/features/ALT-AUCTIONS.MD`.
 
 ## Behavior
 
-The sidebar lists Home, Fanatics Auctions, and Fanatics Selling. Home and Fanatics Auctions stay as they are.
+The sidebar lists Home, Fanatics Auctions, Fanatics Selling, and Alt Auctions, grouped by platform. Home, Fanatics Auctions, and Fanatics Selling stay as they are.
 
-Fanatics Selling uses the same Fanatics Collect session as Fanatics Auctions. A missing session asks the user to sign in on Fanatics Collect's page. Signing in or out on either tab updates the shared session. The password is not stored in the app.
+Alt Auctions uses its own Alt session. A missing session asks the user to sign in on Alt's page. The password is not stored. The saved session stays on this Mac and is used to read the account and to open a lot in Chrome already signed in.
 
-The overview shows the purchase-price total of every card in the vault, the number of those cards, and the total sale value of cards that are still waiting on payment. Purchase price comes from the Collection tab. A card with no purchase price still counts, and its price is left out of the total.
+The overview shows the current auction name when Alt provides one, the winning count, the outbid count, and the winning current-bid and max-bid totals. Totals include the 20% buyer's premium and include pinned and hidden winning lots. Watched lots with no bid are left out of the counts and totals.
 
-Listed cards are vault cards with an active Fanatics listing, other than cards already in pending sales or pending shipment. Each row shows the item name, certification number, purchase price, listing price, margin, favorites, days since listing, and days since the card was curated into the vault. Margin is listing price minus purchase price. Favorites is the listing's favorite count, and zero is shown as zero. The section states how many cards are listed.
+The bid list matches the Fanatics Auctions list. Each row shows the item name on two lines, the current bid and max bid with the buyer's premium, a market price, and the profit against the higher of those two bids. Winning is green and Outbid is orange. A row opens that lot in Google Chrome with the saved Alt session. Pin and hide work the same way as Fanatics Auctions.
 
-Pending sales come from the Sold tab of Fanatics Selling. A sale is pending when the invoice is not paid in full, shown as "Waiting for buyer", or the invoice is paid and the payout is not released, shown as "In progress". A paid invoice whose payout status is payment released is "Payout complete" and is left out, along with canceled, failed, and refunded sales. Each row shows the item name, certification number, purchase price, sale price, profit, sale date, and days from vault acquisition to sale. Certification number, purchase price, and acquisition date are taken from the matching collection card, by listing id or by a unique item name. The section states the count, the sale total, and the profit total. Profit is sale price minus purchase price. An accepted offer is the sale price when one is present.
+A heart shows whether the lot is watched on Alt. Clicking it watches or unwatches the lot on Alt. That is the only write to Alt.
 
-Pending shipment is vault cards whose collection custody status is retrieval in progress. Each row shows the item name, and the section states how many cards are being shipped. The section is omitted when no card is being shipped.
+Sections, in order, are Pinned, Winning, Losing, Watching, and Hidden. Empty sections are omitted. Within a section, rows sort by max bid from highest to lowest. A watched lot with no max bid sorts by its current bid.
 
-Unlisted cards are vault cards that are not listed, not a pending sale, and not being shipped. Each row shows the item name, purchase price, and days since acquisition. The section states how many cards are unlisted.
+Watching is up to 30 lots from the current auction that the user is watching and has not bid on, leaving out pinned and hidden lots. The same 30 stay in place when the auction reloads. The refresh control on that section picks a new 30.
 
-A row opens that card on Fanatics Collect in Google Chrome with the saved session. Listed and pending marketplace cards open the listing. Weekly and premier lots open their auction pages. A card without a listing opens its collection page.
-
-Days are calendar days in Pacific time. A date without a time is that calendar day. A failed read names the problem and does not look like a zero total.
+A failed read names the problem and does not look like a zero total.
 
 ## Architecture
 
-The main process reads the collection and the seller's sold orders with the stored Fanatics session. Parsing and the board live in `src/shared` so tests can run them without Electron. The renderer talks to the main process through the preload bridge.
+The main process reads Alt's current auction, the user's bids and watched lots, and watch state with the stored session. Parsing and the board live in `src/shared` so tests can run them without Electron. The renderer talks to the main process through the preload bridge. Opening a lot reuses the signed-in Chrome helper, with a separate Chrome profile from Fanatics.
 
 ## Steps
 
-1. Parse collection cards and sold orders, then build the overview and three sections.
-2. Read those Fanatics queries with the shared session.
-3. Add the sidebar tab, overview, and the three lists.
+1. Parse Alt bids and build the overview, sections, and watched sample.
+2. Read Alt with the stored session, and watch or unwatch a lot.
+3. Add the sidebar tab, overview, and bid list.
 4. Cover the board with unit tests and the signed-out tab with the Electron smoke check.
 
 ## Acceptance criteria
 
-- The sidebar opens Fanatics Selling beside Home and Fanatics Auctions.
-- With no Fanatics session, the tab asks the user to sign in. A session from Fanatics Auctions is reused, and signing out of either tab clears it.
-- The overview shows total purchase value, card count, and the pending sale total.
-- Listed cards show certification number, purchase price, listing price, margin, favorites, days listed, and days since acquisition, with a count.
-- Pending sales show certification number, purchase price, sale price, profit, sale date, days to sale, and either "Waiting for buyer" or "In progress", with count, sale total, and profit.
-- Pending shipment lists retrievals and shows how many cards are being shipped.
-- Unlisted cards show purchase price and days since acquisition, with a count.
-- A row opens the card on Fanatics Collect in Google Chrome, already signed in.
+- The sidebar opens Alt Auctions beside the existing tabs.
+- With no Alt session, the tab asks the user to sign in.
+- The overview shows winning and outbid counts and the winning bid totals with the buyer's premium.
+- Rows show the item, both bids with the premium, market price, profit, and a Winning or Outbid tag.
+- A heart watches or unwatches that lot on Alt.
+- Pinned, Winning, Losing, Watching, and Hidden sections sort by max bid.
+- Watching shows up to 30 unbid watched lots and its refresh control picks a new 30.
+- A row opens the lot on Alt in Google Chrome, already signed in.
 
 ## Verification
 
-Unit tests for payment status, sale price, collection parsing, cross-reference, sections, and day counts. The Electron smoke check opens the tab and expects the sign-in prompt. A live vault needs the user's Fanatics Collect account.
+Unit tests for premium, parsing, sections, sorting, and the watched sample. The Electron smoke check opens the tab and expects the sign-in prompt. A live auction needs the user's Alt account.
 
 ## Status
 
-- [x] Shared selling board
-- [x] Read collection and sold orders with the shared session
-- [x] Sidebar tab, overview, and the three lists
+- [x] Shared auction board
+- [x] Read Alt and toggle watch with the stored session
+- [x] Sidebar tab, overview, and bid list
 - [x] Unit tests and signed-out smoke check

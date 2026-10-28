@@ -473,6 +473,24 @@ button:disabled {
   min-width: 480px;
 }
 
+.bid-section.alt-bids {
+  grid-template-columns: minmax(220px, 1.5fr) 44px max-content 110px 110px 120px minmax(150px, 1fr);
+  min-width: 900px;
+}
+
+.bid-section-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.bid-section-header h3 {
+  margin: 0;
+}
+
 .bid-section.sell-listed .bid-figure,
 .bid-section.sell-pending .bid-figure,
 .bid-section.sell-shipping .bid-figure,
@@ -497,6 +515,14 @@ button:disabled {
   margin: 0 0 8px;
   font-size: 15px;
   font-weight: 650;
+}
+
+.bid-section .bid-section-header h3 {
+  margin: 0;
+}
+
+.section-empty {
+  grid-column: 1 / -1;
 }
 
 .bid-row:not(.bid-head) {
@@ -627,5 +653,26 @@ button.bid-name {
 button.bid-action {
   padding: 3px 8px;
   font-size: 12px;
+}
+
+button.watch-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+}
+
+button.watch-button.is-on {
+  color: var(--accent);
+}
+
+button.watch-button svg {
+  width: 16px;
+  height: 16px;
 }
 

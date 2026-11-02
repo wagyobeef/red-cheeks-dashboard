@@ -1,12 +1,13 @@
 import { app, safeStorage } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { BidNote, BidPlacement } from '../shared/fanatics'
+import { FANATICS_WATCHING_SAMPLE_LIMIT, type BidNote, type BidPlacement } from '../shared/fanatics'
 import { UserFacingError } from './errors'
 
 type Persisted = {
   refreshTokenEncrypted?: string
   notes?: Record<string, { marketPrice?: unknown; placement?: unknown }>
+  watchingSample?: unknown
 }
 
 function filePath(): string {
@@ -71,6 +72,24 @@ export function saveFanaticsNote(id: string, note: BidNote): void {
   if (note.marketPrice === null && note.placement === 'auto') delete notes[id]
   else notes[id] = { marketPrice: note.marketPrice, placement: note.placement }
   data.notes = notes
+  writePersisted(data)
+}
+
+export function readFanaticsWatchingSample(): string[] {
+  const sample = readPersisted().watchingSample
+  if (!Array.isArray(sample)) return []
+  const ids: string[] = []
+  for (const id of sample) {
+    if (typeof id !== 'string' || !id || ids.includes(id)) continue
+    ids.push(id)
+    if (ids.length >= FANATICS_WATCHING_SAMPLE_LIMIT) break
+  }
+  return ids
+}
+
+export function saveFanaticsWatchingSample(ids: readonly string[]): void {
+  const data = readPersisted()
+  data.watchingSample = ids.slice(0, FANATICS_WATCHING_SAMPLE_LIMIT)
   writePersisted(data)
 }
 

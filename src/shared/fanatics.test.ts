@@ -3,15 +3,19 @@ import { describe, it } from 'node:test'
 import {
   bidPageLabel,
   buildFanaticsBoard,
+  chooseFanaticsWatchingIds,
   fanaticsListingUrl,
   extensionTag,
+  fanaticsWatchingCandidates,
   formatMarketComparison,
   fanaticsCardUrl,
   isFanaticsCardUrl,
   isFanaticsListingUrl,
   listingAuctionId,
   parseFanaticsListings,
+  parseFanaticsWatchlist,
   parseMarketPrice,
+  parseWatchToggle,
   pushLoadStep,
   selectCurrentAuction,
   selectWeeklyAuctionEndingToday,
@@ -37,6 +41,9 @@ function bid(overrides: Partial<ParsedBid> = {}): ParsedBid {
     windowOrdinal: null,
     lastWindowWhenBidWasReceived: null,
     closed: false,
+    watching: false,
+    hasBid: true,
+    listingType: 'WEEKLY',
     ...overrides
   }
 }
@@ -192,6 +199,7 @@ describe('fanatics bids', () => {
     assert.equal(board.auctionName, 'Weekly Auction #249')
     assert.equal(board.winningCount, 3)
     assert.equal(board.outbidCount, 2)
+    assert.equal(board.watchingCount, 0)
     assert.equal(board.winningCurrentTotal, 184)
     assert.equal(board.winningMaxTotal, 550)
     assert.deepEqual(
@@ -331,6 +339,111 @@ describe('fanatics bids', () => {
     assert.deepEqual(
       nextPage.map((step) => step.label),
       ['Checking your Fanatics session', 'Loading bids, page 2 of 3']
+    )
+  })
+
+  it('reads watched lots from the watchlist and keeps bids out of Watching', () => {
+    const lots = parseFanaticsWatchlist({
+      data: {
+        collectCurrentUserV2: {
+          collectWatchlist: {
+            edges: [
+              {
+                node: node({
+                  id: 'watch-1',
+                  title: 'Watched',
+                  listingType: 'WEEKLY',
+                  states: { userBidStatus: 'NO_BIDS', isWatching: true, isClosed: false }
+                })
+              },
+              {
+                node: node({
+                  id: 'bid-watch',
+                  title: 'Bid watch',
+                  listingType: 'WEEKLY',
+                  states: { userBidStatus: 'HIGH_BID', userMaxBid: { amountInCents: 15_000 }, isWatching: true, isClosed: false }
+                })
+              },
+              {
+                node: node({
+                  id: 'premier',
+                  title: 'Premier',
+                  listingType: 'PREMIER',
+                  states: { userBidStatus: 'NO_BIDS', isWatching: true, isClosed: false }
+                })
+              }
+            ]
+          }
+        }
+      }
+    })
+    assert.deepEqual(
+      lots.map((lot) => [lot.id, lot.status, lot.hasBid, lot.watching]),
+      [
+        ['watch-1', 'watching', false, true],
+        ['bid-watch', 'winning', true, true]
+      ]
+    )
+    assert.deepEqual(parseWatchToggle({ data: { collectWatchListing: { successful: true, result: { listing: { states: { isWatching: true } } } } } }), {
+      ok: true,
+      watching: true
+    })
+    assert.deepEqual(parseWatchToggle({ data: { collectUnwatchListing: { successful: false, messages: [{ message: 'Too many watches' }] } } }), {
+      ok: false,
+      message: 'Too many watches'
+    })
+  })
+
+  it('keeps the watched sample until refresh and does not collapse duplicate titles', () => {
+    const lots = [
+      bid({ id: 'seen', name: 'Seen', status: 'watching', hasBid: false, watching: true, currentBid: 80, maxBid: null }),
+      bid({ id: 'other', name: 'Other watch', status: 'watching', hasBid: false, watching: true, currentBid: 20, maxBid: null }),
+      bid({ id: 'twin', name: 'Seen', status: 'watching', hasBid: false, watching: true, currentBid: 12, maxBid: null })
+    ]
+    assert.deepEqual(fanaticsWatchingCandidates(lots, {}), ['seen', 'other', 'twin'])
+    assert.deepEqual(chooseFanaticsWatchingIds(['seen', 'other', 'twin'], ['other'], false), ['other'])
+    assert.equal(chooseFanaticsWatchingIds(['a', 'b', 'c'], [], true, () => 0).length, 3)
+  })
+
+  it('puts unbid watches in Watching and keeps Won after that section', () => {
+    const lots = [
+      bid({ id: 'low', name: 'Low', maxBid: 50, currentBid: 24, watching: true }),
+      bid({ id: 'out', name: 'Out', status: 'outbid', maxBid: 90, currentBid: 120 }),
+      bid({ id: 'won', name: 'Won', closed: true, currentBid: 120, maxBid: null }),
+      bid({ id: 'seen', name: 'Seen', status: 'watching', hasBid: false, watching: true, currentBid: 80, maxBid: null }),
+      bid({ id: 'other', name: 'Other watch', status: 'watching', hasBid: false, watching: true, currentBid: 20, maxBid: null }),
+      bid({ id: 'hideWatch', name: 'Hidden watch', status: 'watching', hasBid: false, watching: true, currentBid: 40, maxBid: null })
+    ]
+    const notes = { hideWatch: { marketPrice: null, placement: 'hidden' as const } }
+    const board = buildFanaticsBoard(lots, notes, ['seen'])
+    assert.equal(board.status, 'ready')
+    if (board.status !== 'ready') return
+    assert.equal(board.winningCount, 1)
+    assert.equal(board.outbidCount, 1)
+    assert.equal(board.watchingCount, 4)
+    assert.deepEqual(
+      board.sections.map((section) => [section.id, section.refresh, section.items.map((item) => item.id)]),
+      [
+        ['winning', false, ['low']],
+        ['losing', false, ['out']],
+        ['watching', true, ['seen']],
+        ['won', false, ['won']],
+        ['hidden', false, ['hideWatch']]
+      ]
+    )
+    assert.equal(board.sections.find((section) => section.id === 'winning')?.items[0]?.watching, true)
+    const emptySample = buildFanaticsBoard(lots, notes, [])
+    assert.equal(emptySample.status, 'ready')
+    if (emptySample.status !== 'ready') return
+    assert.deepEqual(
+      emptySample.sections.map((section) => [section.id, section.items.length]),
+      [
+        ['winning', 1],
+        ['losing', 1],
+        ['watching', 0],
+        ['won', 1],
+        ['hidden', 1]
+      ]
     )
   })
 

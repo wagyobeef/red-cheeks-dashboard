@@ -6,8 +6,7 @@ import {
   buildAltBoard,
   chooseWatchingIds,
   isAltListingUrl,
-  parseAuctionName,
-  parseLiveAuctionCycleId,
+  parseActiveAuctionCycles,
   parseMyAuction,
   parseStytchSession,
   parseWatchToggle,
@@ -89,14 +88,74 @@ describe('alt auctions', () => {
     assert.equal(lots[2]?.maxBid, null)
   })
 
-  it('reads the live auction and its name', () => {
-    const live = { data: { liveAuctionCycle: { auctionCycle: { id: 'cycle-1' } } } }
-    assert.equal(parseLiveAuctionCycleId(live), 'cycle-1')
-    assert.equal(
-      parseAuctionName({ data: { auctionCycles: [{ id: 'cycle-1', name: 'October Auction' }, { id: 'older', name: 'Old' }] } }, 'cycle-1'),
-      'October Auction'
+  it('picks this week’s extended auction over the overlapping live cycle', () => {
+    const cycles = parseActiveAuctionCycles({
+      data: {
+        liveAuctionCycle: null,
+        currentAuctionCycle: { auctionCycle: { id: 1663 } },
+        auctionCycles: [
+          { id: 3709, name: 'Oct 16 - Oct 29, 2026', state: 'IN_EXTENDED_BIDDING', expiresAt: '2026-10-30T04:03:20.862359+00:00' },
+          { id: 3710, name: 'Oct 23 - Nov 05, 2026', state: 'LIVE', expiresAt: '2026-11-06T02:00:00+00:00' },
+          { id: 1, name: 'Preview', state: 'PREVIEW', expiresAt: '2026-11-13T02:00:00+00:00' }
+        ]
+      }
+    })
+    assert.deepEqual(cycles.ids, ['3709'])
+    assert.equal(cycles.name, 'Oct 16 - Oct 29, 2026')
+  })
+
+  it('keeps this week’s lots and drops the overlapping next cycle', () => {
+    const lots = parseMyAuction({
+      data: {
+        myAuction: [
+          {
+            listingId: 'out-1',
+            status: 'OUTBID',
+            currentBid: '230.000000',
+            userMaxBid: 220,
+            auctionCycleId: 3709,
+            itemDetails: { itemName: 'Blastoise' }
+          },
+          {
+            listingId: 'win-1',
+            status: 'WINNING',
+            currentBid: '195.000000',
+            userMaxBid: 400,
+            auctionCycleId: 3709,
+            itemDetails: { itemName: 'Tyranitar' }
+          },
+          {
+            listingId: 'watch-next',
+            status: 'WATCHING',
+            currentBid: 10,
+            userMaxBid: null,
+            auctionCycleId: 3710,
+            itemDetails: { itemName: 'Next cycle' }
+          }
+        ]
+      }
+    })
+    assert.equal(lots.length, 3)
+    assert.equal(lots[0]?.auctionCycleId, '3709')
+    assert.equal(lots[0]?.currentBid, 276)
+    assert.equal(lots[1]?.maxBid, 480)
+    assert.equal(lots[2]?.auctionCycleId, '3710')
+
+    const board = buildAltBoard(lots, {}, ['watch-next'], {
+      ids: ['3709'],
+      name: 'Oct 16 - Oct 29, 2026'
+    })
+    assert.equal(board.status, 'ready')
+    if (board.status !== 'ready') return
+    assert.equal(board.winningCount, 1)
+    assert.equal(board.outbidCount, 1)
+    assert.deepEqual(
+      board.sections.map((section) => [section.title, section.items.map((item) => item.name)]),
+      [
+        ['Winning', ['Tyranitar']],
+        ['Losing', ['Blastoise']]
+      ]
     )
-    assert.equal(parseLiveAuctionCycleId({ data: { currentAuctionCycle: { auctionCycle: { id: 'next' } } } }), 'next')
   })
 
   it('applies watch flags from Alt', () => {
@@ -150,7 +209,7 @@ describe('alt auctions', () => {
       lot({ id: 'old', name: 'Old cycle', auctionCycleId: 'cycle-old' })
     ]
 
-    const board = buildAltBoard(lots, notes, ['seen'], { id: 'cycle-1', name: 'October Auction' })
+    const board = buildAltBoard(lots, notes, ['seen'], { ids: ['cycle-1'], name: 'October Auction' })
     assert.equal(board.status, 'ready')
     if (board.status !== 'ready') return
     assert.equal(board.auctionName, 'October Auction')
@@ -173,9 +232,19 @@ describe('alt auctions', () => {
     assert.deepEqual(watchingCandidates(lots.filter((item) => item.auctionCycleId === 'cycle-1'), notes), ['seen', 'other'])
   })
 
+  it('keeps the cheapest watched listing for each title', () => {
+    const lots = [
+      lot({ id: 'mew-high', name: 'Expedition Holo Mew', status: 'watching', hasBid: false, watching: true, currentBid: 80, maxBid: null }),
+      lot({ id: 'mew-low', name: 'Expedition Holo Mew', status: 'watching', hasBid: false, watching: true, currentBid: 20, maxBid: null }),
+      lot({ id: 'mew-mid', name: 'Expedition Holo Mew', status: 'watching', hasBid: false, watching: true, currentBid: 40, maxBid: null }),
+      lot({ id: 'other', name: 'Other watch', status: 'watching', hasBid: false, watching: true, currentBid: 50, maxBid: null })
+    ]
+    assert.deepEqual(watchingCandidates(lots, {}), ['mew-low', 'other'])
+  })
+
   it('keeps Watching available when the sample is empty', () => {
     const lots = [lot({ id: 'watch', name: 'Watched', status: 'watching', hasBid: false, watching: true, currentBid: 12, maxBid: null })]
-    const board = buildAltBoard(lots, {}, [], { id: 'cycle-1', name: null })
+    const board = buildAltBoard(lots, {}, [], { ids: ['cycle-1'], name: null })
     assert.equal(board.status, 'ready')
     if (board.status !== 'ready') return
     assert.deepEqual(

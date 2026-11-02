@@ -93,6 +93,12 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function id(value: unknown): string {
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return ''
+}
+
 function dollars(value: unknown): number | null {
   const raw = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : Number.NaN
   if (!Number.isFinite(raw) || raw <= 0) return null
@@ -118,23 +124,23 @@ export function parseMyAuction(payload: unknown): ParsedAltLot[] {
   for (const row of rows) {
     if (typeof row !== 'object' || row === null) continue
     const record = row as Record<string, unknown>
-    const id = text(record.listingId)
+    const listingId = id(record.listingId)
     const status = bidStatus(record.status)
     const details = typeof record.itemDetails === 'object' && record.itemDetails !== null ? (record.itemDetails as Record<string, unknown>) : null
     const name = details ? text(details.itemName) : ''
-    if (!id || !name || !status || seen.has(id)) continue
-    seen.add(id)
+    if (!listingId || !name || !status || seen.has(listingId)) continue
+    seen.add(listingId)
     const hasBid = status === 'winning' || status === 'outbid'
     lots.push({
-      id,
+      id: listingId,
       name,
-      url: altListingUrl(id),
+      url: altListingUrl(listingId),
       status,
       hasBid,
       watching: status === 'watching',
       currentBid: premium(record.currentBid),
       maxBid: hasBid ? premium(record.userMaxBid) : null,
-      auctionCycleId: text(record.auctionCycleId)
+      auctionCycleId: id(record.auctionCycleId)
     })
   }
   return lots
@@ -148,34 +154,47 @@ function auctionRows(payload: unknown): unknown[] {
   return Array.isArray(rows) ? rows : []
 }
 
-export function parseLiveAuctionCycleId(payload: unknown): string | null {
-  const live = nested(payload, 'liveAuctionCycle')
-  const fromLive = live ? text(recordOf(live.auctionCycle)?.id) : ''
-  if (fromLive) return fromLive
-  const current = nested(payload, 'currentAuctionCycle')
-  const fromCurrent = current ? text(recordOf(current.auctionCycle)?.id) : ''
-  return fromCurrent || null
+const ACTIVE_CYCLE_STATES = new Set(['LIVE', 'ENDING_TODAY', 'ENDING_TOMORROW', 'IN_EXTENDED_BIDDING'])
+const CYCLE_PRIORITY: Record<string, number> = {
+  IN_EXTENDED_BIDDING: 0,
+  ENDING_TODAY: 1,
+  ENDING_TOMORROW: 2,
+  LIVE: 3
 }
 
-export function parseAuctionName(payload: unknown, cycleId: string | null): string | null {
-  if (!cycleId || typeof payload !== 'object' || payload === null) return null
+function cyclePriority(state: string): number {
+  if (!state) return CYCLE_PRIORITY.LIVE
+  return CYCLE_PRIORITY[state] ?? 99
+}
+
+export function parseActiveAuctionCycles(payload: unknown): { ids: string[]; name: string | null } {
+  if (typeof payload !== 'object' || payload === null) return { ids: [], name: null }
   const data = (payload as { data?: unknown }).data
-  if (typeof data !== 'object' || data === null) return null
+  if (typeof data !== 'object' || data === null) return { ids: [], name: null }
   const rows = (data as { auctionCycles?: unknown }).auctionCycles
-  if (!Array.isArray(rows)) return null
+  if (!Array.isArray(rows)) return { ids: [], name: null }
+
+  const cycles: { id: string; name: string | null; state: string; expiresAt: number }[] = []
   for (const row of rows) {
     const record = recordOf(row)
-    if (!record || text(record.id) !== cycleId) continue
-    return text(record.name) || null
+    if (!record) continue
+    const cycleId = id(record.id)
+    if (!cycleId) continue
+    const state = text(record.state)
+    if (state && !ACTIVE_CYCLE_STATES.has(state)) continue
+    const expiresAt = Date.parse(text(record.expiresAt))
+    cycles.push({
+      id: cycleId,
+      name: text(record.name) || null,
+      state,
+      expiresAt: Number.isFinite(expiresAt) ? expiresAt : Number.POSITIVE_INFINITY
+    })
   }
-  return null
-}
-
-function nested(payload: unknown, key: string): Record<string, unknown> | null {
-  if (typeof payload !== 'object' || payload === null) return null
-  const data = (payload as { data?: unknown }).data
-  if (typeof data !== 'object' || data === null) return null
-  return recordOf((data as Record<string, unknown>)[key])
+  cycles.sort(
+    (a, b) => cyclePriority(a.state) - cyclePriority(b.state) || a.expiresAt - b.expiresAt || a.id.localeCompare(b.id)
+  )
+  const current = cycles[0]
+  return current ? { ids: [current.id], name: current.name } : { ids: [], name: null }
 }
 
 function recordOf(value: unknown): Record<string, unknown> | null {
@@ -192,9 +211,9 @@ export function parseWatcherFlags(payload: unknown): Record<string, boolean> {
   for (const row of rows) {
     const record = recordOf(row)
     if (!record) continue
-    const id = text(record.sourceId)
-    if (!id || typeof record.watching !== 'boolean') continue
-    flags[id] = record.watching
+    const sourceId = id(record.sourceId)
+    if (!sourceId || typeof record.watching !== 'boolean') continue
+    flags[sourceId] = record.watching
   }
   return flags
 }
@@ -204,9 +223,21 @@ export function applyWatcherFlags(lots: readonly ParsedAltLot[], flags: Record<s
 }
 
 export function watchingCandidates(lots: readonly ParsedAltLot[], notes: Record<string, AltNote>): string[] {
-  return lots
-    .filter((lot) => lot.watching && !lot.hasBid && placementOf(notes[lot.id]) === 'auto')
-    .map((lot) => lot.id)
+  const cheapest = new Map<string, ParsedAltLot>()
+  for (const lot of lots) {
+    if (!lot.watching || lot.hasBid || placementOf(notes[lot.id]) !== 'auto') continue
+    const existing = cheapest.get(lot.name)
+    if (!existing || cheaperWatch(lot, existing)) cheapest.set(lot.name, lot)
+  }
+  return [...cheapest.values()].map((lot) => lot.id)
+}
+
+function cheaperWatch(a: ParsedAltLot, b: ParsedAltLot): boolean {
+  if (a.currentBid === null && b.currentBid === null) return a.id < b.id
+  if (a.currentBid === null) return false
+  if (b.currentBid === null) return true
+  if (a.currentBid !== b.currentBid) return a.currentBid < b.currentBid
+  return a.id < b.id
 }
 
 export function chooseWatchingIds(
@@ -270,9 +301,10 @@ export function buildAltBoard(
   lots: readonly ParsedAltLot[],
   notes: Record<string, AltNote>,
   watchingIds: readonly string[],
-  auction: { id: string | null; name: string | null }
+  auction: { ids: readonly string[]; name: string | null }
 ): AltSnapshot {
-  const current = auction.id ? lots.filter((lot) => lot.auctionCycleId === auction.id) : [...lots]
+  const allowed = new Set(auction.ids)
+  const current = allowed.size > 0 ? lots.filter((lot) => allowed.has(lot.auctionCycleId)) : [...lots]
   if (current.length === 0) {
     return { status: 'empty', message: 'No bids or watched lots in the current Alt auction.' }
   }

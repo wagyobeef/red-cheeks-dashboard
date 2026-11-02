@@ -16,7 +16,7 @@
     "google-auth-library": "^11.1.0"
   },
   "devDependencies": {
-    "electron": "^44.4.4",
+    "electron": "^39.8.10",
     "electron-vite": "^5.0.0",
     "tsx": "^4.20.6",
     "typescript": "^7.0.2",

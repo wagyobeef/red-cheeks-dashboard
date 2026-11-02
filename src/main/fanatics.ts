@@ -2,28 +2,34 @@ import { BrowserWindow, session } from 'electron'
 import {
   bidPageLabel,
   buildFanaticsBoard,
+  chooseFanaticsWatchingIds,
+  fanaticsWatchingCandidates,
   isFanaticsCardUrl,
   listingAuctionId,
   listingsPage,
+  parseMarketPrice,
+  parseWatchToggle,
   selectCurrentAuction,
   selectWeeklyAuctionEndingToday,
-  type WeeklyAuctionSchedule,
-  parseMarketPrice,
   tokenExpired,
   tokenExpiry,
+  watchlistPage,
   type BidNote,
   type BidPlacement,
   type FanaticsSnapshot,
   type LoadStep,
-  type ParsedBid
+  type ParsedBid,
+  type WeeklyAuctionSchedule
 } from '../shared/fanatics'
 import { closeSignedInChrome, openSignedInChrome, type ChromeCookie } from './fanaticsChrome'
 import { UserFacingError, logSafe } from './errors'
 import {
   clearStoredRefreshToken,
   readFanaticsNotes,
+  readFanaticsWatchingSample,
   readStoredRefreshToken,
   saveFanaticsNote,
+  saveFanaticsWatchingSample,
   saveStoredRefreshToken
 } from './fanaticsStore'
 
@@ -71,6 +77,7 @@ const BIDS_QUERY = `
               userMaxBid { amountInCents currency }
               userBidStatus
               isClosed
+              isWatching
               lastWindowWhenBidWasReceived
             }
             currentBid { amountInCents currency }
@@ -78,6 +85,71 @@ const BIDS_QUERY = `
         }
         total
       }
+    }
+  }
+`
+
+const WATCHLIST_QUERY = `
+  query webWatchlistQuery(
+    $listingAuctionId: UUID
+    $listingTypes: [CollectListingType]
+    $listingStatuses: [CollectListingStatusFilter]
+    $first: Int
+    $offset: Int
+  ) {
+    collectCurrentUserV2 {
+      collectWatchlist(
+        listingAuctionId: $listingAuctionId
+        listingTypes: $listingTypes
+        listingStatuses: $listingStatuses
+        first: $first
+        offset: $offset
+      ) {
+        edges {
+          node {
+            id
+            slug
+            title
+            listingType
+            auction {
+              id
+              name
+              endsAt
+              status
+              collectListingTimer { windowOrdinal }
+            }
+            states {
+              userMaxBid { amountInCents currency }
+              userBidStatus
+              isClosed
+              isWatching
+              lastWindowWhenBidWasReceived
+            }
+            currentBid { amountInCents currency }
+          }
+        }
+        total
+      }
+    }
+  }
+`
+
+const WATCH_MUTATION = `
+  mutation webWatchListingMutation($id: UUID!, $type: CollectListingType!) {
+    collectWatchListing(id: $id, type: $type) {
+      successful
+      messages { message code }
+      result { listing { id states { isWatching } } }
+    }
+  }
+`
+
+const UNWATCH_MUTATION = `
+  mutation webUnwatchListingMutation($id: UUID!, $type: CollectListingType!) {
+    collectUnwatchListing(id: $id, type: $type) {
+      successful
+      messages { message code }
+      result { listing { id states { isWatching } } }
     }
   }
 `
@@ -406,12 +478,73 @@ async function todaysWeeklyAuctionId(): Promise<string | null> {
   return selectWeeklyAuctionEndingToday(auctions)
 }
 
+function watchlistEdgeCount(payload: unknown): number {
+  if (typeof payload !== 'object' || payload === null) return 0
+  const edges = (payload as { data?: { collectCurrentUserV2?: { collectWatchlist?: { edges?: unknown } } } }).data
+    ?.collectCurrentUserV2?.collectWatchlist?.edges
+  return Array.isArray(edges) ? edges.length : 0
+}
+
+async function fetchWatchPages(report: Report, auctionId?: string): Promise<ParsedBid[]> {
+  const lots: ParsedBid[] = []
+  const seen = new Set<string>()
+  let total: number | null = null
+  try {
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      report({ id: 'watches', label: bidPageLabel(page, total, PAGE_SIZE, 'watched lots') })
+      const data = await fanaticsQuery(
+        'webWatchlistQuery',
+        WATCHLIST_QUERY,
+        {
+          listingStatuses: ['OPEN'],
+          listingTypes: ['WEEKLY'],
+          first: PAGE_SIZE,
+          offset: page * PAGE_SIZE,
+          ...(auctionId ? { listingAuctionId: auctionId } : {})
+        },
+        report
+      )
+      const payload = { data }
+      const pageResult = watchlistPage(payload)
+      const received = watchlistEdgeCount(payload)
+      if (pageResult.total !== null) total = pageResult.total
+      report({ id: 'watches', label: bidPageLabel(page, total, PAGE_SIZE, 'watched lots') })
+      if (received === 0) break
+      for (const lot of pageResult.lots) {
+        if (seen.has(lot.id)) continue
+        seen.add(lot.id)
+        lots.push(lot)
+      }
+      if (received < PAGE_SIZE || (total !== null && lots.length >= total)) break
+    }
+  } catch (error) {
+    if (error instanceof UserFacingError && error.message === 'Sign in again to Fanatics Collect.') throw error
+    logSafe(error)
+  }
+  return lots
+}
+
+function mergeLots(bids: readonly ParsedBid[], watched: readonly ParsedBid[], won: readonly ParsedBid[]): ParsedBid[] {
+  const byId = new Map<string, ParsedBid>()
+  for (const bid of bids) byId.set(bid.id, bid)
+  for (const lot of watched) {
+    const existing = byId.get(lot.id)
+    if (existing) byId.set(lot.id, { ...existing, watching: existing.watching || lot.watching })
+    else byId.set(lot.id, lot)
+  }
+  for (const lot of won) {
+    if (!byId.has(lot.id)) byId.set(lot.id, lot)
+  }
+  return [...byId.values()]
+}
+
 async function fetchBids(report: Report): Promise<ParsedBid[]> {
   const token = await accessToken(report)
   const open = await fetchBidPages(token, report, 'bids', ['OPEN'])
   let auctionId = listingAuctionId(selectCurrentAuction(open).find((bid) => bid.auctionId)?.auctionId ?? '')
   if (!auctionId && open.length === 0) auctionId = await todaysWeeklyAuctionId()
-  if (!auctionId) return open
+  const watched = await fetchWatchPages(report, auctionId ?? undefined)
+  if (!auctionId) return mergeLots(open, watched, [])
   let won: ParsedBid[] = []
   try {
     // SOLD is the site's won filter and skips the auction in progress. Closed winning lots are that auction's recent wins.
@@ -419,19 +552,25 @@ async function fetchBids(report: Report): Promise<ParsedBid[]> {
   } catch (error) {
     logSafe(error)
   }
-  const seen = new Set(open.map((bid) => bid.id))
-  return [...open, ...won.filter((bid) => !seen.has(bid.id))]
+  return mergeLots(open, watched, won)
 }
 
-function boardFrom(bids: ParsedBid[]): FanaticsSnapshot {
-  return buildFanaticsBoard(bids, readFanaticsNotes())
+function boardFrom(bids: ParsedBid[], reshuffle: boolean): FanaticsSnapshot {
+  const notes = readFanaticsNotes()
+  const watchingIds = chooseFanaticsWatchingIds(
+    fanaticsWatchingCandidates(selectCurrentAuction(bids), notes),
+    readFanaticsWatchingSample(),
+    reshuffle
+  )
+  saveFanaticsWatchingSample(watchingIds)
+  return buildFanaticsBoard(bids, notes, watchingIds)
 }
 
-export async function fanaticsBoard(refresh: boolean, report: Report = quiet): Promise<FanaticsSnapshot> {
+export async function fanaticsBoard(refresh: boolean, reshuffleWatching: boolean, report: Report = quiet): Promise<FanaticsSnapshot> {
   if (!hasStoredFanaticsSession()) return { status: 'signed-out' }
   if (refresh || !bidCache) bidCache = await fetchBids(report)
   report({ id: 'prepare', label: 'Preparing your auction' })
-  return boardFrom(bidCache)
+  return boardFrom(bidCache, reshuffleWatching)
 }
 
 function noteFrom(input: { marketPrice: number | null; placement: BidPlacement }): BidNote {
@@ -447,7 +586,39 @@ export async function updateFanaticsItem(input: {
   saveFanaticsNote(input.id, noteFrom(input))
   if (!hasStoredFanaticsSession()) return { status: 'signed-out' }
   if (!bidCache) bidCache = await fetchBids(quiet)
-  return boardFrom(bidCache)
+  return boardFrom(bidCache, false)
+}
+
+export async function toggleFanaticsWatch(id: string, watching: boolean): Promise<FanaticsSnapshot> {
+  if (!id) throw new UserFacingError('That lot could not be updated on Fanatics.')
+  if (!hasStoredFanaticsSession()) return { status: 'signed-out' }
+  if (!bidCache) bidCache = await fetchBids(quiet)
+  const lot = bidCache.find((item) => item.id === id)
+  if (!lot) throw new UserFacingError('That lot could not be updated on Fanatics.')
+  if (lot.watching === watching) return boardFrom(bidCache, false)
+
+  const data = await fanaticsQuery(
+    watching ? 'webWatchListingMutation' : 'webUnwatchListingMutation',
+    watching ? WATCH_MUTATION : UNWATCH_MUTATION,
+    { id, type: lot.listingType || 'WEEKLY' },
+    quiet
+  )
+  const result = parseWatchToggle({ data })
+  if (!result.ok) throw new UserFacingError(result.message)
+  bidCache = bidCache.flatMap((item) => {
+    if (item.id !== id) return [item]
+    if (!result.watching && !item.hasBid) return []
+    return [{ ...item, watching: result.watching }]
+  })
+  return boardFrom(bidCache, false)
+}
+
+export function parseFanaticsWatch(input: unknown): { id: string; watching: boolean } {
+  if (typeof input !== 'object' || input === null) throw new UserFacingError('That lot could not be updated on Fanatics.')
+  const record = input as Record<string, unknown>
+  const id = typeof record.id === 'string' ? record.id.trim() : ''
+  if (!id || typeof record.watching !== 'boolean') throw new UserFacingError('That lot could not be updated on Fanatics.')
+  return { id, watching: record.watching }
 }
 
 export function parseFanaticsUpdate(input: unknown): { id: string; marketPrice: number | null; placement: BidPlacement } {

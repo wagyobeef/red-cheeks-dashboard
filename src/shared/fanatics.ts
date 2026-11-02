@@ -1,11 +1,12 @@
 import { formatUsd } from './present'
 
 export const BUYERS_PREMIUM_RATE = 1.2
+export const FANATICS_WATCHING_SAMPLE_LIMIT = 20
 
-export type BidStatus = 'winning' | 'outbid'
+export type BidStatus = 'winning' | 'outbid' | 'watching'
 export type ExtensionTag = 'next-window' | 'needs-bid'
 export type BidPlacement = 'pinned' | 'hidden' | 'auto'
-export type BidSectionId = 'pinned' | 'winning' | 'losing' | 'won' | 'hidden'
+export type BidSectionId = 'pinned' | 'winning' | 'losing' | 'watching' | 'won' | 'hidden'
 
 export type ParsedBid = {
   id: string
@@ -21,6 +22,9 @@ export type ParsedBid = {
   windowOrdinal: number | null
   lastWindowWhenBidWasReceived: number | null
   closed: boolean
+  watching: boolean
+  hasBid: boolean
+  listingType: string
 }
 
 export type BidNote = {
@@ -39,12 +43,15 @@ export type FanaticsItem = {
   placement: BidPlacement
   extension: ExtensionTag | null
   closed: boolean
+  watching: boolean
+  hasBid: boolean
 }
 
 export type FanaticsSection = {
   id: BidSectionId
   title: string
   items: FanaticsItem[]
+  refresh: boolean
 }
 
 export type LoadStep = { id: string; label: string }
@@ -75,6 +82,7 @@ export type FanaticsSnapshot =
       auctionName: string | null
       winningCount: number
       outbidCount: number
+      watchingCount: number
       winningCurrentTotal: number
       winningMaxTotal: number
       sections: FanaticsSection[]
@@ -83,12 +91,13 @@ export type FanaticsSnapshot =
   | { status: 'signed-out' }
   | { status: 'error'; message: string }
 
-const SECTION_TITLES: { id: BidSectionId; title: string }[] = [
-  { id: 'pinned', title: 'Pinned' },
-  { id: 'winning', title: 'Winning' },
-  { id: 'losing', title: 'Losing' },
-  { id: 'won', title: 'Won' },
-  { id: 'hidden', title: 'Hidden' }
+const SECTION_TITLES: { id: BidSectionId; title: string; refresh: boolean }[] = [
+  { id: 'pinned', title: 'Pinned', refresh: false },
+  { id: 'winning', title: 'Winning', refresh: false },
+  { id: 'losing', title: 'Losing', refresh: false },
+  { id: 'watching', title: 'Watching', refresh: true },
+  { id: 'won', title: 'Won', refresh: false },
+  { id: 'hidden', title: 'Hidden', refresh: false }
 ]
 
 export function withBuyersPremium(cents: number): number {
@@ -193,19 +202,27 @@ function bidStatus(value: unknown): BidStatus | null {
   return null
 }
 
+function listingTypeOf(value: unknown): string {
+  const type = text(value)
+  return type || 'WEEKLY'
+}
+
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-function parseNode(node: unknown): ParsedBid | null {
+function parseNode(node: unknown, allowWatching: boolean): ParsedBid | null {
   if (typeof node !== 'object' || node === null) return null
   const record = node as Record<string, unknown>
   const id = text(record.id)
   const name = text(record.title)
-  const status = typeof record.states === 'object' && record.states !== null ? bidStatus((record.states as Record<string, unknown>).userBidStatus) : null
   const states = typeof record.states === 'object' && record.states !== null ? (record.states as Record<string, unknown>) : null
+  const status = states ? bidStatus(states.userBidStatus) : null
+  const watching = states?.isWatching === true || (allowWatching && !status)
   const closed = states?.isClosed === true
-  if (!id || !name || !status || !states || (closed && status !== 'winning')) return null
+  const resolved = status ?? (watching ? 'watching' : null)
+  if (!id || !name || !resolved || !states || (closed && resolved !== 'winning')) return null
+  if (resolved === 'watching' && !allowWatching) return null
 
   const currentCents = moneyCents(record.currentBid)
   if (currentCents === null) return null
@@ -216,21 +233,25 @@ function parseNode(node: unknown): ParsedBid | null {
   const timer = auction && typeof auction.collectListingTimer === 'object' && auction.collectListingTimer !== null
     ? (auction.collectListingTimer as Record<string, unknown>)
     : null
+  const hasBid = resolved === 'winning' || resolved === 'outbid'
 
   return {
     id,
     name,
     url: fanaticsListingUrl(id, text(record.slug)),
-    status,
+    status: resolved,
     currentBid: withBuyersPremium(currentCents),
-    maxBid: maxCents === null ? null : withBuyersPremium(maxCents),
+    maxBid: hasBid && maxCents !== null ? withBuyersPremium(maxCents) : null,
     auctionId: auction ? text(auction.id) : '',
     auctionName: auction ? text(auction.name) || null : null,
     endsAt: Number.isFinite(endsAtMs) ? endsAtMs : null,
     auctionStatus: auction ? text(auction.status) || null : null,
     windowOrdinal: wholeNumber(timer?.windowOrdinal),
     lastWindowWhenBidWasReceived: wholeNumber(states.lastWindowWhenBidWasReceived),
-    closed
+    closed,
+    watching,
+    hasBid,
+    listingType: listingTypeOf(record.listingType)
   }
 }
 
@@ -253,7 +274,7 @@ export function parseFanaticsListings(payload: unknown): ParsedBid[] {
   const bids: ParsedBid[] = []
   for (const edge of edges) {
     if (typeof edge !== 'object' || edge === null) continue
-    const bid = parseNode((edge as { node?: unknown }).node)
+    const bid = parseNode((edge as { node?: unknown }).node, false)
     if (!bid || seen.has(bid.id)) continue
     seen.add(bid.id)
     bids.push(bid)
@@ -267,6 +288,97 @@ export function listingsPage(payload: unknown): { bids: ParsedBid[]; total: numb
   const data = (payload as { data?: { collectCurrentUserV2?: { collectListings?: { total?: unknown } } } }).data
   const total = data?.collectCurrentUserV2?.collectListings?.total
   return { bids, total: typeof total === 'number' && Number.isFinite(total) ? total : null }
+}
+
+export function parseFanaticsWatchlist(payload: unknown): ParsedBid[] {
+  if (typeof payload !== 'object' || payload === null) return []
+  const data = (payload as { data?: unknown }).data
+  if (typeof data !== 'object' || data === null) return []
+  const user = (data as { collectCurrentUserV2?: unknown }).collectCurrentUserV2
+  if (typeof user !== 'object' || user === null) return []
+  const listings = (user as { collectWatchlist?: unknown }).collectWatchlist
+  if (typeof listings !== 'object' || listings === null) return []
+  const edges = (listings as { edges?: unknown }).edges
+  if (!Array.isArray(edges)) return []
+
+  const seen = new Set<string>()
+  const lots: ParsedBid[] = []
+  for (const edge of edges) {
+    if (typeof edge !== 'object' || edge === null) continue
+    const lot = parseNode((edge as { node?: unknown }).node, true)
+    if (!lot || lot.listingType !== 'WEEKLY' || seen.has(lot.id)) continue
+    seen.add(lot.id)
+    lots.push({ ...lot, watching: true })
+  }
+  return lots
+}
+
+export function watchlistPage(payload: unknown): { lots: ParsedBid[]; total: number | null } {
+  const lots = parseFanaticsWatchlist(payload)
+  if (typeof payload !== 'object' || payload === null) return { lots, total: null }
+  const data = (payload as { data?: { collectCurrentUserV2?: { collectWatchlist?: { total?: unknown } } } }).data
+  const total = data?.collectCurrentUserV2?.collectWatchlist?.total
+  return { lots, total: typeof total === 'number' && Number.isFinite(total) ? total : null }
+}
+
+export function parseWatchToggle(payload: unknown): { ok: true; watching: boolean } | { ok: false; message: string } {
+  if (typeof payload !== 'object' || payload === null) return { ok: false, message: 'That lot could not be updated on Fanatics.' }
+  const data = (payload as { data?: Record<string, unknown> }).data
+  const toggle =
+    data && typeof data === 'object'
+      ? (data.collectWatchListing as Record<string, unknown> | undefined) ??
+        (data.collectUnwatchListing as Record<string, unknown> | undefined)
+      : undefined
+  if (!toggle || typeof toggle !== 'object') return { ok: false, message: 'That lot could not be updated on Fanatics.' }
+  if (toggle.successful === true) {
+    const result = typeof toggle.result === 'object' && toggle.result !== null ? (toggle.result as Record<string, unknown>) : null
+    const listing = result && typeof result.listing === 'object' && result.listing !== null ? (result.listing as Record<string, unknown>) : null
+    const states = listing && typeof listing.states === 'object' && listing.states !== null ? (listing.states as Record<string, unknown>) : null
+    if (typeof states?.isWatching === 'boolean') return { ok: true, watching: states.isWatching }
+    if (data?.collectWatchListing) return { ok: true, watching: true }
+    if (data?.collectUnwatchListing) return { ok: true, watching: false }
+  }
+  const messages = Array.isArray(toggle.messages) ? toggle.messages : []
+  for (const message of messages) {
+    if (typeof message === 'object' && message !== null && typeof (message as { message?: unknown }).message === 'string') {
+      const textMessage = (message as { message: string }).message.trim()
+      if (textMessage) return { ok: false, message: textMessage }
+    }
+  }
+  return { ok: false, message: 'That lot could not be updated on Fanatics.' }
+}
+
+export function fanaticsWatchingCandidates(lots: readonly ParsedBid[], notes: Record<string, BidNote>): string[] {
+  return lots
+    .filter((lot) => lot.watching && !lot.hasBid && !lot.closed && placementOf(notes[lot.id]) === 'auto')
+    .map((lot) => lot.id)
+}
+
+export function chooseFanaticsWatchingIds(
+  eligible: readonly string[],
+  previous: readonly string[],
+  refresh: boolean,
+  random: () => number = Math.random
+): string[] {
+  const allowed = new Set(eligible)
+  if (!refresh) {
+    const kept = previous.filter((id, index) => allowed.has(id) && previous.indexOf(id) === index).slice(0, FANATICS_WATCHING_SAMPLE_LIMIT)
+    if (kept.length > 0) return kept
+  }
+  const pool = [...new Set(eligible)]
+  for (let index = pool.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1))
+    const current = pool[index]
+    const swap = pool[swapIndex]
+    if (current === undefined || swap === undefined) continue
+    pool[index] = swap
+    pool[swapIndex] = current
+  }
+  return pool.slice(0, FANATICS_WATCHING_SAMPLE_LIMIT)
+}
+
+function placementOf(note: BidNote | undefined): BidPlacement {
+  return note?.placement === 'pinned' || note?.placement === 'hidden' ? note.placement : 'auto'
 }
 
 export type WeeklyAuctionSchedule = {
@@ -321,39 +433,55 @@ export function selectCurrentAuction(bids: ParsedBid[]): ParsedBid[] {
   return bids.filter((bid) => bid.auctionId === bestId)
 }
 
+function rank(item: FanaticsItem): number {
+  return item.maxBid ?? item.currentBid
+}
+
 function compareItems(a: FanaticsItem, b: FanaticsItem): number {
-  const aMax = a.maxBid ?? Number.NEGATIVE_INFINITY
-  const bMax = b.maxBid ?? Number.NEGATIVE_INFINITY
-  if (aMax !== bMax) return bMax - aMax
+  const difference = rank(b) - rank(a)
+  if (difference !== 0) return difference
   return a.name.localeCompare(b.name)
 }
 
-export function buildFanaticsBoard(bids: ParsedBid[], notes: Record<string, BidNote>): FanaticsSnapshot {
+export function buildFanaticsBoard(
+  bids: ParsedBid[],
+  notes: Record<string, BidNote>,
+  watchingIds: readonly string[] = []
+): FanaticsSnapshot {
   const current = selectCurrentAuction(bids)
   if (current.length === 0) {
-    return { status: 'empty', message: 'No active bids in the current weekly auction.' }
+    return { status: 'empty', message: 'No bids or watched lots in the current weekly auction.' }
   }
 
-  const groups: Record<BidSectionId, FanaticsItem[]> = { pinned: [], winning: [], losing: [], won: [], hidden: [] }
+  const groups: Record<BidSectionId, FanaticsItem[]> = {
+    pinned: [],
+    winning: [],
+    losing: [],
+    watching: [],
+    won: [],
+    hidden: []
+  }
+  const byId = new Map<string, FanaticsItem>()
   let winningCount = 0
   let outbidCount = 0
+  let watchingCount = 0
   let winningCurrentTotal = 0
   let winningMaxTotal = 0
   let auctionName: string | null = null
 
   for (const bid of current) {
     if (!auctionName && bid.auctionName) auctionName = bid.auctionName
+    if (bid.watching && !bid.closed) watchingCount += 1
     if (bid.status === 'winning') {
       if (!bid.closed) winningCount += 1
       winningCurrentTotal += bid.currentBid
       const max = bid.maxBid ?? (bid.closed ? bid.currentBid : null)
       if (max !== null) winningMaxTotal += max
-    } else {
+    } else if (bid.status === 'outbid') {
       outbidCount += 1
     }
 
     const note = notes[bid.id]
-    const placement = note?.placement === 'pinned' || note?.placement === 'hidden' ? note.placement : 'auto'
     const item: FanaticsItem = {
       id: bid.id,
       name: bid.name,
@@ -362,20 +490,33 @@ export function buildFanaticsBoard(bids: ParsedBid[], notes: Record<string, BidN
       currentBid: bid.currentBid,
       maxBid: bid.maxBid,
       marketPrice: note?.marketPrice ?? null,
-      placement,
+      placement: placementOf(note),
       extension: bid.closed ? null : extensionTag(bid.auctionStatus, bid.windowOrdinal, bid.lastWindowWhenBidWasReceived),
-      closed: bid.closed
+      closed: bid.closed,
+      watching: bid.watching,
+      hasBid: bid.hasBid
     }
-    if (placement === 'pinned') groups.pinned.push(item)
+    byId.set(item.id, item)
+    if (item.placement === 'pinned') groups.pinned.push(item)
     else if (item.closed && item.status === 'winning') groups.won.push(item)
-    else if (placement === 'hidden') groups.hidden.push(item)
+    else if (item.placement === 'hidden') groups.hidden.push(item)
     else if (item.status === 'winning') groups.winning.push(item)
-    else groups.losing.push(item)
+    else if (item.status === 'outbid') groups.losing.push(item)
   }
 
+  const sampled = new Set<string>()
+  for (const id of watchingIds) {
+    const item = byId.get(id)
+    if (!item || item.placement !== 'auto' || !item.watching || item.hasBid || sampled.has(id)) continue
+    sampled.add(id)
+    groups.watching.push(item)
+  }
+
+  const unsampledWatching = fanaticsWatchingCandidates(current, notes).length > 0
   const sections = SECTION_TITLES.flatMap((section) => {
     const items = groups[section.id].sort(compareItems)
-    return items.length > 0 ? [{ ...section, items }] : []
+    if (items.length === 0 && !(section.id === 'watching' && unsampledWatching)) return []
+    return [{ ...section, items }]
   })
 
   return {
@@ -383,6 +524,7 @@ export function buildFanaticsBoard(bids: ParsedBid[], notes: Record<string, BidN
     auctionName,
     winningCount,
     outbidCount,
+    watchingCount,
     winningCurrentTotal,
     winningMaxTotal,
     sections

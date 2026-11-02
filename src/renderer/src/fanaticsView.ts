@@ -10,7 +10,7 @@ import {
 import { formatCount, formatUsd } from '../../shared/present'
 
 type Banner = { text: string; tone: 'info' | 'error' }
-type Busy = 'load' | 'sign-in' | 'sign-out' | null
+type Busy = 'load' | 'sign-in' | 'sign-out' | 'sample' | null
 
 let requestRender = (): void => {}
 let titleTip: HTMLElement | null = null
@@ -19,6 +19,7 @@ let busy: Busy = null
 let banner: Banner | null = null
 let steps: LoadStep[] = []
 let progressToken = 0
+let watchChain: Promise<void> = Promise.resolve()
 
 export function bindFanatics(render: () => void): void {
   requestRender = render
@@ -47,6 +48,25 @@ function refreshIcon(): SVGSVGElement {
   return svg
 }
 
+function heartIcon(filled: boolean): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('aria-hidden', 'true')
+  const shape = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  shape.setAttribute(
+    'd',
+    'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z'
+  )
+  if (filled) shape.setAttribute('fill', 'currentColor')
+  else {
+    shape.setAttribute('fill', 'none')
+    shape.setAttribute('stroke', 'currentColor')
+    shape.setAttribute('stroke-width', '1.75')
+  }
+  svg.append(shape)
+  return svg
+}
+
 function showTitleTip(anchor: HTMLElement, text: string): void {
   if (!titleTip) {
     titleTip = el('div', 'bid-tooltip')
@@ -72,7 +92,9 @@ function money(value: number | null): string {
 }
 
 function statusLabel(status: FanaticsItem['status']): string {
-  return status === 'winning' ? 'Winning' : 'Outbid'
+  if (status === 'winning') return 'Winning'
+  if (status === 'outbid') return 'Outbid'
+  return ''
 }
 
 function extensionLabel(extension: NonNullable<FanaticsItem['extension']>): string {
@@ -178,17 +200,18 @@ function overviewCard(): HTMLElement {
   card.append(header)
 
   if (!snapshot || snapshot.status === 'empty') {
-    card.append(el('p', 'lede', snapshot?.status === 'empty' ? snapshot.message : 'No active bids in the current weekly auction.'))
+    card.append(el('p', 'lede', snapshot?.status === 'empty' ? snapshot.message : 'No bids or watched lots in the current weekly auction.'))
     card.append(signOutButton())
     return card
   }
   if (snapshot.status !== 'ready') return card
 
   if (snapshot.auctionName) card.append(el('p', 'eyebrow auction-name', snapshot.auctionName))
-  const metrics = el('div', 'metrics fanatics-metrics')
+  const metrics = el('div', 'metrics fanatics-metrics has-watch-count')
   for (const metric of [
     { label: 'Winning', value: formatCount(snapshot.winningCount) },
     { label: 'Outbid', value: formatCount(snapshot.outbidCount) },
+    { label: 'Watched', value: formatCount(snapshot.watchingCount) },
     { label: 'Winning bids', value: formatUsd(snapshot.winningCurrentTotal) },
     { label: 'Winning max bids', value: formatUsd(snapshot.winningMaxTotal) }
   ]) {
@@ -217,19 +240,41 @@ function listCard(): HTMLElement {
   card.append(el('h2', undefined, 'Bids'))
   card.append(el('p', 'note bid-note', "Current and max bids include the 20% buyer's premium."))
   if (!snapshot || snapshot.status === 'empty') {
-    card.append(el('p', 'lede', snapshot?.status === 'empty' ? snapshot.message : 'No active bids in the current weekly auction.'))
+    card.append(el('p', 'lede', snapshot?.status === 'empty' ? snapshot.message : 'No bids or watched lots in the current weekly auction.'))
     return card
   }
   if (snapshot.status !== 'ready') return card
 
   const list = el('div', 'bid-list')
   for (const section of snapshot.sections) {
-    const block = el('section', 'bid-section')
-    block.append(el('h3', undefined, section.title))
-    const head = el('div', 'bid-row bid-head')
-    for (const label of ['Item', 'Actions', 'Current bid', 'Max bid', 'Market price', 'Profit']) head.append(el('span', undefined, label))
-    block.append(head)
-    for (const item of section.items) block.append(bidRow(item))
+    const block = el('section', 'bid-section has-watch')
+    if (section.refresh) {
+      const header = el('div', 'bid-section-header')
+      header.append(el('h3', undefined, section.title))
+      const refresh = el('button', 'icon-button')
+      refresh.type = 'button'
+      refresh.setAttribute('aria-label', 'Refresh watched lots')
+      refresh.title = 'Refresh watched lots'
+      refresh.disabled = busy !== null
+      refresh.append(refreshIcon())
+      refresh.addEventListener('click', () => {
+        void refreshWatching()
+      })
+      header.append(refresh)
+      block.append(header)
+    } else {
+      block.append(el('h3', undefined, section.title))
+    }
+    if (section.items.length === 0) {
+      block.append(el('p', 'note section-empty', 'Refresh to choose watched lots.'))
+    } else {
+      const head = el('div', 'bid-row bid-head')
+      for (const label of ['Item', 'Watch', 'Actions', 'Current bid', 'Max bid', 'Market price', 'Profit']) {
+        head.append(el('span', undefined, label))
+      }
+      block.append(head)
+      for (const item of section.items) block.append(bidRow(item))
+    }
     list.append(block)
   }
   card.append(list)
@@ -241,7 +286,8 @@ function bidRow(item: FanaticsItem): HTMLElement {
   const row = el('div', 'bid-row')
   const name = el('button', 'bid-name')
   name.type = 'button'
-  name.append(el('span', `bid-status is-${item.status}`, statusLabel(item.status)))
+  const label = statusLabel(item.status)
+  if (label) name.append(el('span', `bid-status is-${item.status}`, label))
   if (item.closed) name.append(el('span', 'bid-status is-ended', 'Ended'))
   if (item.extension) {
     const extension = el('span', `bid-status is-${item.extension}`, extensionLabel(item.extension))
@@ -258,6 +304,17 @@ function bidRow(item: FanaticsItem): HTMLElement {
   })
   row.addEventListener('click', () => {
     void openListing(item.url)
+  })
+
+  const watch = el('button', item.watching ? 'watch-button is-on' : 'watch-button')
+  watch.type = 'button'
+  watch.setAttribute('aria-label', item.watching ? `Unwatch ${item.name}` : `Watch ${item.name}`)
+  watch.setAttribute('aria-pressed', item.watching ? 'true' : 'false')
+  watch.disabled = busy !== null
+  watch.append(heartIcon(item.watching))
+  watch.addEventListener('click', (event) => {
+    event.stopPropagation()
+    watchChain = watchChain.then(() => toggleWatch(item)).catch(() => undefined)
   })
 
   const current = el('div', 'bid-money')
@@ -307,7 +364,7 @@ function bidRow(item: FanaticsItem): HTMLElement {
     })
   )
 
-  row.append(name, actions, current, max, market, compare)
+  row.append(name, watch, actions, current, max, market, compare)
   return row
 }
 
@@ -335,6 +392,26 @@ async function applyNote(item: FanaticsItem, note: { marketPrice: number | null;
   if (!window.redCheeks) return
   const result = await window.redCheeks.updateFanaticsItem({ id: item.id, ...note })
   snapshot = result
+  banner = result.status === 'error' ? { text: result.message, tone: 'error' } : null
+  requestRender()
+}
+
+async function toggleWatch(item: FanaticsItem): Promise<void> {
+  if (!window.redCheeks) return
+  const result = await window.redCheeks.toggleFanaticsWatch({ id: item.id, watching: !item.watching })
+  snapshot = result
+  banner = result.status === 'error' ? { text: result.message, tone: 'error' } : null
+  requestRender()
+}
+
+async function refreshWatching(): Promise<void> {
+  if (!window.redCheeks) return
+  busy = 'sample'
+  banner = null
+  requestRender()
+  const result = await window.redCheeks.getFanaticsBoard({ refresh: false, reshuffleWatching: true })
+  snapshot = result
+  busy = null
   banner = result.status === 'error' ? { text: result.message, tone: 'error' } : null
   requestRender()
 }
@@ -395,7 +472,7 @@ export async function loadFanatics(refresh: boolean): Promise<void> {
   busy = 'load'
   const stop = watchProgress(token)
   requestRender()
-  const result = await window.redCheeks.getFanaticsBoard({ refresh })
+  const result = await window.redCheeks.getFanaticsBoard({ refresh, reshuffleWatching: false })
   stop()
   if (token !== progressToken) return
   snapshot = result

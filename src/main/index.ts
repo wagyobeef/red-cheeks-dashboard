@@ -22,8 +22,10 @@ import {
   hasStoredFanaticsSession,
   openFanaticsListing,
   parseFanaticsUpdate,
+  parseFanaticsWatch,
   signInToFanatics,
   signOutOfFanatics,
+  toggleFanaticsWatch,
   updateFanaticsItem
 } from './fanatics'
 import { getAccessToken, readWorkbook, signIn } from './google'
@@ -123,7 +125,7 @@ function registerIpc(): void {
 
   ipcMain.handle('fanatics:board', async (event, input: unknown) => {
     try {
-      return await fanaticsBoard(requestedRefresh(input), progressReport(event.sender, 'fanatics:progress'))
+      return await fanaticsBoard(requestedRefresh(input), requestedReshuffle(input), progressReport(event.sender, 'fanatics:progress'))
     } catch (error) {
       return { status: 'error' as const, message: userMessage(error, 'Fanatics Collect could not be read.') }
     }
@@ -152,6 +154,15 @@ function registerIpc(): void {
       return await updateFanaticsItem(parseFanaticsUpdate(input))
     } catch (error) {
       return { status: 'error' as const, message: userMessage(error, 'That bid could not be updated.') }
+    }
+  })
+
+  ipcMain.handle('fanatics:watch', async (_event, input: unknown) => {
+    try {
+      const watch = parseFanaticsWatch(input)
+      return await toggleFanaticsWatch(watch.id, watch.watching)
+    } catch (error) {
+      return { status: 'error' as const, message: userMessage(error, 'That lot could not be updated on Fanatics.') }
     }
   })
 

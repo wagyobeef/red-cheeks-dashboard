@@ -19,7 +19,8 @@ const api = {
     refresh: boolean
   }): Promise<HomeOverview | { status: 'error'; message: string }> => ipcRenderer.invoke('overview:get', input),
   getFanaticsSession: (): Promise<{ signedIn: boolean }> => ipcRenderer.invoke('fanatics:session'),
-  getFanaticsBoard: (input: { refresh: boolean }): Promise<FanaticsSnapshot> => ipcRenderer.invoke('fanatics:board', input),
+  getFanaticsBoard: (input: { refresh: boolean; reshuffleWatching: boolean }): Promise<FanaticsSnapshot> =>
+    ipcRenderer.invoke('fanatics:board', input),
   signInToFanatics: (): Promise<ActionResult> => ipcRenderer.invoke('fanatics:sign-in'),
   signOutOfFanatics: (): Promise<ActionResult> => ipcRenderer.invoke('fanatics:sign-out'),
   updateFanaticsItem: (input: {
@@ -27,6 +28,8 @@ const api = {
     marketPrice: number | null
     placement: BidPlacement
   }): Promise<FanaticsSnapshot> => ipcRenderer.invoke('fanatics:update', input),
+  toggleFanaticsWatch: (input: { id: string; watching: boolean }): Promise<FanaticsSnapshot> =>
+    ipcRenderer.invoke('fanatics:watch', input),
   openFanaticsListing: (url: string): Promise<ActionResult> => ipcRenderer.invoke('fanatics:open', url),
   getFanaticsSelling: (input: { refresh: boolean }): Promise<SellingSnapshot> => ipcRenderer.invoke('fanatics:selling', input),
   onFanaticsProgress: (listener: (step: LoadStep) => void): (() => void) => {

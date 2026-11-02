@@ -4,8 +4,7 @@ import {
   buildAltBoard,
   chooseWatchingIds,
   isAltListingUrl,
-  parseAuctionName,
-  parseLiveAuctionCycleId,
+  parseActiveAuctionCycles,
   parseMyAuction,
   parseStytchSession,
   parseWatchToggle,
@@ -47,15 +46,11 @@ const altChromeSite: SignedInSite = {
 
 const AUCTION_CONTEXT = `
   query AltAuctionContext {
-    liveAuctionCycle {
-      auctionCycle { id }
-    }
-    currentAuctionCycle {
-      auctionCycle { id }
-    }
     auctionCycles {
       id
       name
+      state
+      expiresAt
     }
   }
 `
@@ -100,7 +95,7 @@ const TOGGLE_WATCH = `
 `
 
 type Report = (step: LoadStep) => void
-type Cache = { lots: ParsedAltLot[]; cycleId: string | null; auctionName: string | null }
+type Cache = { lots: ParsedAltLot[]; cycleIds: string[]; auctionName: string | null }
 
 const quiet: Report = () => {}
 
@@ -360,26 +355,27 @@ async function fetchBoard(report: Report): Promise<Cache> {
     altQuery('AltAuctionContext', AUCTION_CONTEXT, {}, report),
     altQuery('MyAuction', MY_AUCTION, {}, report)
   ])
-  const cycleId = parseLiveAuctionCycleId(context)
+  const cycles = parseActiveAuctionCycles(context)
   let lots = parseMyAuction(bids)
-  const inCycle = cycleId ? lots.filter((lot) => lot.auctionCycleId === cycleId) : lots
-  if (cycleId && inCycle.length > 0) {
+  const cycleIds = cycles.ids
+  const inCycle = cycleIds.length > 0 ? lots.filter((lot) => cycleIds.includes(lot.auctionCycleId)) : []
+  if (inCycle.length > 0) {
     const flags = await watchFlags(inCycle.map((lot) => lot.id), report)
     lots = applyWatcherFlags(lots, flags)
   }
-  return { lots, cycleId, auctionName: parseAuctionName(context, cycleId) }
+  return { lots, cycleIds, auctionName: cycles.name }
 }
 
 function boardFrom(stored: Cache, reshuffle: boolean): AltSnapshot {
-  if (!stored.cycleId) return { status: 'empty', message: 'No Alt auction is live right now.' }
+  if (stored.cycleIds.length === 0) return { status: 'empty', message: 'No Alt auction is live right now.' }
   const notes = readAltNotes()
   const eligible = watchingCandidates(
-    stored.lots.filter((lot) => lot.auctionCycleId === stored.cycleId),
+    stored.lots.filter((lot) => stored.cycleIds.includes(lot.auctionCycleId)),
     notes
   )
   const watchingIds = chooseWatchingIds(eligible, readWatchingSample(), reshuffle)
   saveWatchingSample(watchingIds)
-  return buildAltBoard(stored.lots, notes, watchingIds, { id: stored.cycleId, name: stored.auctionName })
+  return buildAltBoard(stored.lots, notes, watchingIds, { ids: stored.cycleIds, name: stored.auctionName })
 }
 
 export async function altBoard(refresh: boolean, reshuffleWatching: boolean, report: Report = quiet): Promise<AltSnapshot> {

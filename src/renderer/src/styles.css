@@ -428,6 +428,10 @@ button:disabled {
   grid-template-columns: 1fr 1fr;
 }
 
+.fanatics-metrics.has-watch-count {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .selling-metrics {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -473,7 +477,8 @@ button:disabled {
   min-width: 480px;
 }
 
-.bid-section.alt-bids {
+.bid-section.alt-bids,
+.bid-section.has-watch {
   grid-template-columns: minmax(220px, 1.5fr) 44px max-content 110px 110px 120px minmax(150px, 1fr);
   min-width: 900px;
 }

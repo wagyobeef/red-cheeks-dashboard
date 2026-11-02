@@ -3,6 +3,7 @@ import type { HomeOverview } from '../shared/aggregate'
 import type { ConnectionState } from '../shared/connection'
 import type { AltPlacement, AltSnapshot } from '../shared/alt'
 import type { BidPlacement, FanaticsSnapshot, LoadStep } from '../shared/fanatics'
+import type { AltSellingSnapshot } from '../shared/altSelling'
 import type { SellingSnapshot } from '../shared/fanaticsSelling'
 
 export type ActionResult = { ok: true } | { ok: false; message: string }
@@ -50,6 +51,7 @@ const api = {
   updateAltItem: (input: { id: string; marketPrice: number | null; placement: AltPlacement }): Promise<AltSnapshot> =>
     ipcRenderer.invoke('alt:update', input),
   toggleAltWatch: (input: { id: string; watching: boolean }): Promise<AltSnapshot> => ipcRenderer.invoke('alt:watch', input),
+  getAltSelling: (input: { refresh: boolean }): Promise<AltSellingSnapshot> => ipcRenderer.invoke('alt:selling', input),
   openAltListing: (url: string): Promise<ActionResult> => ipcRenderer.invoke('alt:open', url),
   onAltProgress: (listener: (step: LoadStep) => void): (() => void) => {
     const handler = (_event: unknown, payload: unknown): void => {
@@ -60,6 +62,16 @@ const api = {
     }
     ipcRenderer.on('alt:progress', handler)
     return () => ipcRenderer.removeListener('alt:progress', handler)
+  },
+  onAltSellingProgress: (listener: (step: LoadStep) => void): (() => void) => {
+    const handler = (_event: unknown, payload: unknown): void => {
+      if (typeof payload !== 'object' || payload === null) return
+      const record = payload as { id?: unknown; label?: unknown }
+      if (typeof record.id !== 'string' || typeof record.label !== 'string' || !record.id || !record.label) return
+      listener({ id: record.id, label: record.label })
+    }
+    ipcRenderer.on('alt:selling-progress', handler)
+    return () => ipcRenderer.removeListener('alt:selling-progress', handler)
   },
   onFanaticsSellingProgress: (listener: (step: LoadStep) => void): (() => void) => {
     const handler = (_event: unknown, payload: unknown): void => {

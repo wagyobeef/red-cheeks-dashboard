@@ -3,7 +3,7 @@ import {
   applyWatcherFlags,
   buildAltBoard,
   chooseWatchingIds,
-  isAltListingUrl,
+  isAltCardUrl,
   parseActiveAuctionCycles,
   parseMyAuction,
   parseStytchSession,
@@ -113,10 +113,27 @@ function clearBidCache(): void {
   cache = null
 }
 
+const sessionListeners: Array<() => void> = []
+
+export function whenAltSessionCleared(listener: () => void): void {
+  sessionListeners.push(listener)
+}
+
+function notifySessionCleared(): void {
+  for (const listener of sessionListeners) {
+    try {
+      listener()
+    } catch (error) {
+      logSafe(error)
+    }
+  }
+}
+
 function clearSessionTokens(): void {
   jwtCache = null
   clearBidCache()
   clearStoredAltSession()
+  notifySessionCleared()
   void altSession()
     .clearStorageData()
     .catch((error) => logSafe(error))
@@ -274,7 +291,7 @@ function authFailed(status: number, body: { errors?: { message?: unknown; extens
   )
 }
 
-async function altQuery(
+export async function altQuery(
   operationName: string,
   query: string,
   variables: Record<string, unknown>,
@@ -445,7 +462,7 @@ function chromeCookie(name: string, value: string): ChromeCookie {
 }
 
 export async function openAltListing(url: string): Promise<void> {
-  if (!isAltListingUrl(url)) throw new UserFacingError('That Alt listing could not be opened.')
+  if (!isAltCardUrl(url)) throw new UserFacingError('That Alt listing could not be opened.')
   const jwt = await sessionJwt(quiet)
   const sessionToken = readStoredAltSession()
   if (!sessionToken) throw new UserFacingError('Sign in again to Alt.')

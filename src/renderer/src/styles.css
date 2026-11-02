@@ -477,6 +477,16 @@ button:disabled {
   min-width: 480px;
 }
 
+.bid-section.sell-alt-listed {
+  grid-template-columns: minmax(220px, 1.7fr) 100px 100px 120px 96px 100px 88px 96px 110px;
+  min-width: 1140px;
+}
+
+.bid-section.sell-alt-pending {
+  grid-template-columns: minmax(200px, 1.6fr) 100px 110px 96px 116px 96px;
+  min-width: 900px;
+}
+
 .bid-section.alt-bids,
 .bid-section.has-watch {
   grid-template-columns: minmax(220px, 1.5fr) 44px max-content 110px 110px 120px minmax(150px, 1fr);
@@ -500,6 +510,8 @@ button:disabled {
 .bid-section.sell-pending .bid-figure,
 .bid-section.sell-shipping .bid-figure,
 .bid-section.sell-unlisted .bid-figure,
+.bid-section.sell-alt-listed .bid-figure,
+.bid-section.sell-alt-pending .bid-figure,
 .bid-section.sell-pending .bid-status {
   font-size: 12px;
   font-weight: 500;
@@ -625,6 +637,20 @@ button.bid-name {
 .bid-figure {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+}
+
+.bid-money {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.bid-sub {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .bid-market input {

@@ -3,6 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homeOverviewForSheet, type YearSelection } from '../shared/aggregate'
 import type { LoadStep } from '../shared/fanatics'
+import { altSellingBoard } from './altSelling'
 import { sellingBoard } from './fanaticsSelling'
 import {
   altBoard,
@@ -66,7 +67,10 @@ if (smokeRun) {
   app.setPath('userData', path.join(app.getPath('temp'), 'red-cheeks-dashboard-smoke'))
 }
 
-function progressReport(sender: WebContents, channel: 'fanatics:progress' | 'fanatics:selling-progress' | 'alt:progress'): (step: LoadStep) => void {
+function progressReport(
+  sender: WebContents,
+  channel: 'fanatics:progress' | 'fanatics:selling-progress' | 'alt:progress' | 'alt:selling-progress'
+): (step: LoadStep) => void {
   return (step) => {
     if (sender.isDestroyed()) return
     sender.send(channel, step)
@@ -219,6 +223,14 @@ function registerIpc(): void {
     }
   })
 
+  ipcMain.handle('alt:selling', async (event, input: unknown) => {
+    try {
+      return await altSellingBoard(requestedRefresh(input), progressReport(event.sender, 'alt:selling-progress'))
+    } catch (error) {
+      return { status: 'error' as const, message: userMessage(error, 'Alt could not be read.') }
+    }
+  })
+
   ipcMain.handle('alt:watch', async (_event, input: unknown) => {
     try {
       const watch = parseAltWatch(input)
@@ -326,6 +338,11 @@ async function runSmoke(win: BrowserWindow): Promise<void> {
     [...document.querySelectorAll('nav button')].find((button) => button.textContent === 'Fanatics Selling').click()
   `)
   checks.push(await waitForText(win, 'cards in your vault'))
+
+  await win.webContents.executeJavaScript(`
+    [...document.querySelectorAll('nav button')].find((button) => button.textContent === 'Alt Selling').click()
+  `)
+  checks.push(await waitForText(win, 'Sign in to Alt'))
 
   const text = await win.webContents.executeJavaScript('document.body.innerText')
   console.log(text)

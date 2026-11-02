@@ -4,10 +4,11 @@ import { MONTH_LABELS } from '../../shared/month'
 import { formatUsd, presentYearlyOverview, type PresentedOverview } from '../../shared/present'
 import { altPanel, bindAlt, loadAlt } from './altView'
 import { bindFanatics, fanaticsPanel, loadFanatics } from './fanaticsView'
+import { altSellingPanel, bindAltSelling, loadAltSelling } from './altSellingView'
 import { bindSelling, loadSelling, sellingPanel } from './sellingView'
 import './styles.css'
 
-type Tab = 'home' | 'fanatics' | 'alt' | 'selling'
+type Tab = 'home' | 'fanatics' | 'alt' | 'selling' | 'alt-selling'
 
 type MonthlyMetric = 'profit' | 'purchase' | 'sale'
 
@@ -128,7 +129,8 @@ function render(): void {
     navButton('Home', 'home'),
     navButton('Fanatics Auctions', 'fanatics'),
     navButton('Fanatics Selling', 'selling'),
-    navButton('Alt Auctions', 'alt')
+    navButton('Alt Auctions', 'alt'),
+    navButton('Alt Selling', 'alt-selling')
   )
   sidebar.append(nav)
 
@@ -154,7 +156,17 @@ function render(): void {
 
   const content = el('main', 'content')
   const panel =
-    tab === 'fanatics' ? fanaticsPanel() : tab === 'alt' ? altPanel() : tab === 'selling' ? sellingPanel() : mode === 'setup' ? setupCard() : overviewStack()
+    tab === 'fanatics'
+      ? fanaticsPanel()
+      : tab === 'alt'
+        ? altPanel()
+        : tab === 'selling'
+          ? sellingPanel()
+          : tab === 'alt-selling'
+            ? altSellingPanel()
+            : mode === 'setup'
+              ? setupCard()
+              : overviewStack()
   content.append(panel)
   shell.append(sidebar, content)
   appRoot.append(shell)
@@ -172,6 +184,7 @@ function navButton(label: string, id: Tab): HTMLButtonElement {
     if (id === 'fanatics') void loadFanatics(false)
     else if (id === 'alt') void loadAlt(false)
     else if (id === 'selling') void loadSelling(false)
+    else if (id === 'alt-selling') void loadAltSelling(false)
     else render()
   })
   return node
@@ -638,4 +651,5 @@ async function boot(): Promise<void> {
 bindFanatics(render)
 bindAlt(render)
 bindSelling(render)
+bindAltSelling(render)
 void boot()

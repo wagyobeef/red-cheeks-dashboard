@@ -74,16 +74,41 @@ export function altListingUrl(id: string): string {
   return `https://www.alt.xyz/liquid-auctions/select-listing?ids=${encodeURIComponent(id)}`
 }
 
+export function altMarketplaceUrl(id: string): string {
+  return `https://www.alt.xyz/exchange/select-listing?ids=${encodeURIComponent(id)}`
+}
+
+export function altItemUrl(id: string): string {
+  return `https://www.alt.xyz/item/${encodeURIComponent(id)}`
+}
+
+function altHost(url: URL): boolean {
+  return url.protocol === 'https:' && (url.hostname === 'www.alt.xyz' || url.hostname === 'alt.xyz')
+}
+
+function listingPath(url: URL): boolean {
+  return (
+    (url.pathname === '/liquid-auctions/select-listing' || url.pathname === '/exchange/select-listing') &&
+    url.searchParams.get('ids') !== null &&
+    url.searchParams.get('ids') !== ''
+  )
+}
+
 export function isAltListingUrl(value: string): boolean {
   try {
     const url = new URL(value)
-    return (
-      url.protocol === 'https:' &&
-      (url.hostname === 'www.alt.xyz' || url.hostname === 'alt.xyz') &&
-      url.pathname === '/liquid-auctions/select-listing' &&
-      url.searchParams.get('ids') !== null &&
-      url.searchParams.get('ids') !== ''
-    )
+    return altHost(url) && listingPath(url)
+  } catch {
+    return false
+  }
+}
+
+export function isAltCardUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    if (!altHost(url)) return false
+    if (listingPath(url)) return true
+    return url.pathname.startsWith('/item/') && url.pathname.length > '/item/'.length
   } catch {
     return false
   }

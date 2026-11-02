@@ -1,41 +1,43 @@
-# Fanatics watching implementation plan
+# Alt Selling implementation plan
 
-Approved plan for watch/unwatch and the Watching section on Fanatics Auctions, as specified in `docs/features/FANATICS-AUCTIONS.MD`.
+Approved plan for the Alt Selling tab, as specified in `docs/features/ALT-SELLING.MD`.
 
 ## Behavior
 
-Fanatics Auctions keeps its existing overview, Won lots, and extension tags. The overview also shows how many lots in the current weekly auction are watched on Fanatics, including lots that already have a bid. A heart on each row shows whether that lot is watched on Fanatics. Clicking it watches or unwatches the lot on Fanatics. That is the only write to Fanatics.
+The sidebar lists Alt Selling next to Alt Auctions. The tab uses the saved Alt session. A missing session asks the user to sign in on Alt's page. Sign-in and sign-out are shared with Alt Auctions.
 
-Sections, in order, are Pinned, Winning, Losing, Watching, Won, and Hidden. Empty sections are omitted, except Watching stays visible when there are unbid watched lots that are not in the current sample.
+The overview shows Total value (sum of cost basis for cards still in the Alt vault), Cards, and Total pending sales (payouts still processing). Unvaulted cards and completed sales are left out of the vault totals.
 
-Watching is up to 20 lots from the current weekly auction that the user is watching and has not bid on, leaving out pinned and hidden lots. Duplicate titles stay eligible. The same 20 stay in place when the auction reloads. The refresh control on that section picks a new 20.
+Sections, in order, are Listed cards, Pending sales, and Unlisted cards. Empty sections are omitted. There is no pending-shipment section.
+
+Listed rows show item, purchase price, listing price, projected payout (91% of list), margin against that payout, last comp, favorites, days listed, and days owned. Pending rows show item, purchase price, total payout, profit, sold date, and days to sale. Unlisted rows show item, purchase price, and days owned. A row opens that card or listing on Alt in Chrome with the saved session.
 
 ## Architecture
 
-Bids keep `isWatching` from Fanatics. Unbid watches come from `collectWatchlist` for the current weekly auction. Watch and unwatch use Fanatics' listing mutations. Parsing and the board live in `src/shared`. The watched sample is stored in `fanatics.json`.
+The main process reads Alt `myCards` with the stored session and, for listed lots, `listings` for the list date. Parsing and the board live in `src/shared`. The renderer follows the Fanatics Selling cards and tables.
 
 ## Steps
 
-1. Parse watch state, the watchlist, and the 20-lot sample.
-2. Read and toggle watches with the stored Fanatics session.
-3. Add the heart column, Watching section, and section refresh.
-4. Cover the board with unit tests.
+1. Parse Alt collection cards and build the vault overview and sections.
+2. Read Alt with the stored session.
+3. Add the sidebar tab, overview, and selling lists.
+4. Cover the board with unit tests and the signed-out tab with the Electron smoke check.
 
 ## Acceptance criteria
 
-- A heart watches or unwatches that lot on Fanatics.
-- Watching shows up to 20 unbid watched lots from this week's auction.
-- The Watching refresh control picks a new 20.
-- Won lots and extension tags stay in the list.
-- Duplicate titles are not collapsed to the cheapest listing.
+- The sidebar opens Alt Selling beside Alt Auctions.
+- With no Alt session, the tab asks the user to sign in.
+- The overview shows vault purchase-price total and card count.
+- Listed, pending, and unlisted sections match the Alt spec columns.
+- A row opens the card on Alt in Google Chrome, already signed in.
 
 ## Verification
 
-Unit tests for watchlist parsing, section order, and the watched sample. A live auction needs the user's Fanatics account.
+Unit tests for parsing, vault grouping, and totals. The Electron smoke check opens the tab and expects the sign-in prompt. A live vault needs the user's Alt account.
 
 ## Status
 
-- [x] Shared watch board
-- [x] Read Fanatics watchlist and toggle watch with the stored session
-- [x] Heart column, Watching section, and section refresh
-- [x] Unit tests
+- [x] Shared selling board
+- [x] Read Alt collection with the stored session
+- [x] Sidebar tab, overview, and lists
+- [x] Unit tests and signed-out smoke check

@@ -2,9 +2,11 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   applyWatcherFlags,
+  altItemUrl,
   altListingUrl,
   buildAltBoard,
   chooseWatchingIds,
+  isAltCardUrl,
   isAltListingUrl,
   parseActiveAuctionCycles,
   parseMyAuction,
@@ -267,7 +269,11 @@ describe('alt auctions', () => {
 
   it('accepts Alt listing urls only', () => {
     assert.equal(isAltListingUrl(altListingUrl('lot-1')), true)
+    assert.equal(isAltListingUrl('https://www.alt.xyz/exchange/select-listing?ids=lot-1'), true)
     assert.equal(isAltListingUrl('https://www.alt.xyz/liquid-auctions/current-bids'), false)
     assert.equal(isAltListingUrl('https://www.fanaticscollect.com/weekly/lot-1'), false)
+    assert.equal(isAltCardUrl(altItemUrl('card-1')), true)
+    assert.equal(isAltCardUrl(altListingUrl('lot-1')), true)
+    assert.equal(isAltCardUrl('https://www.alt.xyz/item/'), false)
   })
 })

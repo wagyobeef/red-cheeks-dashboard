@@ -5,6 +5,7 @@ import {
   buildSellingBoard,
   calendarDay,
   parseCollectionPage,
+  parseFanCashBalance,
   parseSaleOrdersPage,
   pendingPayment,
   salePriceDollars,
@@ -66,6 +67,18 @@ describe('fanatics selling', () => {
     assert.equal(salePriceDollars(10_000, 8_000), 80)
     assert.equal(salePriceDollars(10_000, null), 100)
     assert.equal(salePriceDollars(0, null), null)
+  })
+
+  it('reads FanCash from the wallet badge payload', () => {
+    assert.equal(
+      parseFanCashBalance({
+        fancashBalance: { balance: { amount: 12_345, currency: 'USD' } }
+      }),
+      123.45
+    )
+    assert.equal(parseFanCashBalance({ fancashBalance: { balance: { amount: '12.34' } } }), 12.34)
+    assert.equal(parseFanCashBalance({ fancashBalance: { balance: { amountInCents: 500 } } }), 5)
+    assert.equal(parseFanCashBalance({}), null)
   })
 
   it('reads vault cards and sold orders from the Fanatics payloads', () => {
@@ -194,11 +207,13 @@ describe('fanatics selling', () => {
         sale({ listingId: 'paid', name: 'Already paid', invoiceStatus: 'INVOICE_STATUS_PAID_IN_FULL', payoutStatus: 'PAYOUT_STATUS_PAYMENT_RELEASED', salePrice: 999 }),
         sale({ listingId: 'offer', name: 'Duplicate Name', invoiceStatus: 'INVOICE_STATUS_PAID_IN_FULL', payoutStatus: 'PAYOUT_STATUS_PENDING', salePrice: 70 })
       ],
-      NOW
+      NOW,
+      12.34
     )
 
     assert.equal(board.status, 'ready')
     if (board.status !== 'ready') return
+    assert.equal(board.fanCash, 12.34)
     assert.equal(board.cardCount, 5)
     assert.equal(board.totalValue, 89)
     assert.equal(board.pendingSalesTotal, 125)

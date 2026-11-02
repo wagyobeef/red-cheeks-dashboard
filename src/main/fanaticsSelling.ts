@@ -2,12 +2,14 @@ import { bidPageLabel, type LoadStep } from '../shared/fanatics'
 import {
   buildSellingBoard,
   parseCollectionPage,
+  parseFanCashBalance,
   parseSaleOrdersPage,
   type SellingSnapshot,
   type SoldRecord,
   type VaultCard
 } from '../shared/fanaticsSelling'
 import { fanaticsQuery, hasStoredFanaticsSession, whenFanaticsSessionCleared } from './fanatics'
+import { logSafe, UserFacingError } from './errors'
 
 const PAGE_SIZE = 100
 const MAX_COLLECTION_PAGES = 40
@@ -61,6 +63,30 @@ const COLLECTION_QUERY = `
   }
 `
 
+const WALLET_QUERY = `
+  query webGetUserProfileWalletBadgeDataQuery {
+    collectCurrentUserV2 {
+      tenantId
+      accountFunds {
+        usableFunds {
+          amountInCents
+          currency
+        }
+      }
+    }
+    currentBalance {
+      amount
+      currency
+    }
+    fancashBalance {
+      balance {
+        amount
+        currency
+      }
+    }
+  }
+`
+
 const SALES_QUERY = `
   query webBoGetSaleOrdersBySellerQuery(
     $pageSize: Int
@@ -94,7 +120,7 @@ type Report = (step: LoadStep) => void
 
 const quiet: Report = () => {}
 
-let cache: { cards: VaultCard[]; sales: SoldRecord[] } | null = null
+let cache: { cards: VaultCard[]; sales: SoldRecord[]; fanCash: number | null } | null = null
 
 whenFanaticsSessionCleared(() => {
   cache = null
@@ -159,15 +185,26 @@ async function fetchSales(report: Report): Promise<SoldRecord[]> {
   return sales
 }
 
-async function fetchSelling(report: Report): Promise<{ cards: VaultCard[]; sales: SoldRecord[] }> {
-  const cards = await fetchCollection(report)
-  const sales = await fetchSales(report)
-  return { cards, sales }
+async function fetchFanCash(report: Report): Promise<number | null> {
+  report({ id: 'wallet', label: 'Checking FanCash' })
+  try {
+    const data = await fanaticsQuery('webGetUserProfileWalletBadgeDataQuery', WALLET_QUERY, {}, report)
+    return parseFanCashBalance(data)
+  } catch (error) {
+    if (error instanceof UserFacingError && error.message === 'Sign in again to Fanatics Collect.') throw error
+    logSafe(error)
+    return null
+  }
+}
+
+async function fetchSelling(report: Report): Promise<{ cards: VaultCard[]; sales: SoldRecord[]; fanCash: number | null }> {
+  const [cards, sales, fanCash] = await Promise.all([fetchCollection(report), fetchSales(report), fetchFanCash(report)])
+  return { cards, sales, fanCash }
 }
 
 export async function sellingBoard(refresh: boolean, report: Report = quiet): Promise<SellingSnapshot> {
   if (!hasStoredFanaticsSession()) return { status: 'signed-out' }
   if (refresh || !cache) cache = await fetchSelling(report)
   report({ id: 'prepare', label: 'Preparing your vault' })
-  return buildSellingBoard(cache.cards, cache.sales)
+  return buildSellingBoard(cache.cards, cache.sales, Date.now(), cache.fanCash)
 }

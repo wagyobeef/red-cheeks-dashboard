@@ -436,6 +436,10 @@ button:disabled {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.selling-metrics.has-four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .fanatics-sign-out {
   margin-top: 18px;
 }

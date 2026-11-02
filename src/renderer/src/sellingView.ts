@@ -187,8 +187,9 @@ function overviewCard(): HTMLElement {
   }
   if (snapshot.status !== 'ready') return card
 
-  const metrics = el('div', 'metrics selling-metrics')
+  const metrics = el('div', 'metrics selling-metrics has-four')
   for (const metric of [
+    { label: 'FanCash', value: money(snapshot.fanCash) },
     { label: 'Total value', value: formatUsd(snapshot.totalValue) },
     { label: 'Cards', value: formatCount(snapshot.cardCount) },
     { label: 'Pending sales', value: formatUsd(snapshot.pendingSalesTotal) }

@@ -77,6 +77,7 @@ export type UnlistedCard = {
 export type SellingSnapshot =
   | {
       status: 'ready'
+      fanCash: number | null
       totalValue: number
       cardCount: number
       pendingSalesTotal: number
@@ -133,6 +134,28 @@ function dollars(amountCents: number | null): number | null {
 
 function roundMoney(value: number): number {
   return Math.round(value * 100) / 100
+}
+
+function recordOf(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null
+}
+
+export function parseFanCashBalance(payload: unknown): number | null {
+  const root = recordOf(payload)
+  const data = recordOf(root?.data) ?? root
+  const cash = recordOf(data?.fancashBalance)
+  const balance = recordOf(cash?.balance) ?? cash
+  if (!balance) return null
+  const centsAmount = cents(balance)
+  if (centsAmount !== null) return dollars(centsAmount)
+  const amount = balance.amount
+  if (typeof amount === 'number' && Number.isFinite(amount)) return roundMoney(amount / 100)
+  if (typeof amount === 'string' && amount.trim()) {
+    const parsed = Number(amount)
+    if (!Number.isFinite(parsed)) return null
+    return amount.includes('.') ? roundMoney(parsed) : roundMoney(parsed / 100)
+  }
+  return null
 }
 
 function pacificDayIndex(ms: number): number | null {
@@ -347,7 +370,12 @@ function byPriceThenName<T extends { name: string }>(price: (item: T) => number 
   }
 }
 
-export function buildSellingBoard(cards: readonly VaultCard[], sales: readonly SoldRecord[], now = Date.now()): SellingSnapshot {
+export function buildSellingBoard(
+  cards: readonly VaultCard[],
+  sales: readonly SoldRecord[],
+  now = Date.now(),
+  fanCash: number | null = null
+): SellingSnapshot {
   const today = pacificDayIndex(now)
   const pendingIds = new Set<string>()
   const pendingCardIds = new Set<string>()
@@ -430,6 +458,7 @@ export function buildSellingBoard(cards: readonly VaultCard[], sales: readonly S
   const knownProfit = pending.filter((item) => item.profit !== null)
   return {
     status: 'ready',
+    fanCash,
     totalValue: roundMoney(totalValue),
     cardCount: cards.length,
     pendingSalesTotal: roundMoney(pending.reduce((sum, item) => sum + item.salePrice, 0)),

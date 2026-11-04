@@ -23,7 +23,9 @@ Data that will be displayed in this tab can primarily be found in the Collection
 In this section, we display important summary data, including:
 
 - FanCash: available in Wallet tab
-- Total Value: sum of purchase price of all cards in the user's Fanatics vault
+- Value in Vault: sum of purchase price of all cards in the user's Fanatics vault
+- Value Pending Shipment: sum of purchase price of all cards pending shipment
+- Total Value: total value of FanCash, value in vault, and value pending shipment
 - Number of Cards: number of cards in the Fanatics vault
 - Total Pending Sales: sum of the value of cards that are pending payment. This data can be found in the "Sold" tab of the "Selling" tab in Fanatics. Pending cards will either have a "Waiting for buyer's payment" or "Payout in progress" status
 

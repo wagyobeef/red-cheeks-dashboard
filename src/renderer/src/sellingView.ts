@@ -187,9 +187,11 @@ function overviewCard(): HTMLElement {
   }
   if (snapshot.status !== 'ready') return card
 
-  const metrics = el('div', 'metrics selling-metrics has-four')
+  const metrics = el('div', 'metrics selling-metrics has-six')
   for (const metric of [
     { label: 'FanCash', value: money(snapshot.fanCash) },
+    { label: 'Value in vault', value: formatUsd(snapshot.vaultValue) },
+    { label: 'Value pending shipment', value: formatUsd(snapshot.pendingShipmentValue) },
     { label: 'Total value', value: formatUsd(snapshot.totalValue) },
     { label: 'Cards', value: formatCount(snapshot.cardCount) },
     { label: 'Pending sales', value: formatUsd(snapshot.pendingSalesTotal) }
@@ -199,7 +201,13 @@ function overviewCard(): HTMLElement {
     metrics.append(block)
   }
   card.append(metrics)
-  card.append(el('p', 'note', 'Total value adds the purchase price of each vault card.'))
+  card.append(
+    el(
+      'p',
+      'note',
+      'Value in vault and value pending shipment use purchase price. Total value adds FanCash to both.'
+    )
+  )
   if (snapshot.listed.length === 0 && snapshot.pending.length === 0 && snapshot.shipping.length === 0 && snapshot.unlisted.length === 0) {
     card.append(el('p', 'lede', 'Nothing is listed, awaiting payment, or being shipped.'))
   }

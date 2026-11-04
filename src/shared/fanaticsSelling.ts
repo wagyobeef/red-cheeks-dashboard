@@ -78,6 +78,8 @@ export type SellingSnapshot =
   | {
       status: 'ready'
       fanCash: number | null
+      vaultValue: number
+      pendingShipmentValue: number
       totalValue: number
       cardCount: number
       pendingSalesTotal: number
@@ -411,14 +413,16 @@ export function buildSellingBoard(
   const listed: ListedCard[] = []
   const shipping: ShipmentCard[] = []
   const unlisted: UnlistedCard[] = []
-  let totalValue = 0
+  let vaultValue = 0
+  let pendingShipmentValue = 0
 
   for (const card of cards) {
-    totalValue += card.purchasePrice ?? 0
     if (RETRIEVAL_STATUSES.has(card.custodyStatus) || RETRIEVAL_STATUSES.has(card.status)) {
+      pendingShipmentValue += card.purchasePrice ?? 0
       shipping.push({ id: card.id, name: card.name, url: fanaticsCardUrl('collection', card.id) })
       continue
     }
+    vaultValue += card.purchasePrice ?? 0
     if (pendingCardIds.has(card.id)) continue
     const listing = activeListing(card)
     if (listing && pendingIds.has(listing.id)) continue
@@ -456,10 +460,14 @@ export function buildSellingBoard(
   unlisted.sort(byPriceThenName((item) => item.purchasePrice))
 
   const knownProfit = pending.filter((item) => item.profit !== null)
+  const vault = roundMoney(vaultValue)
+  const pendingShip = roundMoney(pendingShipmentValue)
   return {
     status: 'ready',
     fanCash,
-    totalValue: roundMoney(totalValue),
+    vaultValue: vault,
+    pendingShipmentValue: pendingShip,
+    totalValue: roundMoney((fanCash ?? 0) + vault + pendingShip),
     cardCount: cards.length,
     pendingSalesTotal: roundMoney(pending.reduce((sum, item) => sum + item.salePrice, 0)),
     pendingProfit: knownProfit.length === 0 ? null : roundMoney(knownProfit.reduce((sum, item) => sum + (item.profit ?? 0), 0)),

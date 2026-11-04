@@ -215,7 +215,9 @@ describe('fanatics selling', () => {
     if (board.status !== 'ready') return
     assert.equal(board.fanCash, 12.34)
     assert.equal(board.cardCount, 5)
-    assert.equal(board.totalValue, 89)
+    assert.equal(board.vaultValue, 79)
+    assert.equal(board.pendingShipmentValue, 10)
+    assert.equal(board.totalValue, 101.34)
     assert.equal(board.pendingSalesTotal, 125)
     assert.equal(board.pendingProfit, 30)
     assert.equal(board.listed.length, 1)

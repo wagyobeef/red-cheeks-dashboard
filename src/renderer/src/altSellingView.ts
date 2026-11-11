@@ -231,7 +231,7 @@ function listedCard(items: AltListedCard[]): HTMLElement {
     'Listed cards',
     `${cardsLabel(items.length)} listed`,
     'sell-alt-listed',
-    ['Item', 'Purchase', 'Listing', 'Projected payout', 'Margin', 'Last comp', 'Favorites', 'Days listed', 'Days owned'],
+    ['Item', 'Purchase', 'Listing', 'Projected payout', 'Margin', 'Last comp', 'Favorites', 'Days owned'],
     items.map(listedRow)
   )
 }
@@ -281,7 +281,6 @@ function listedRow(item: AltListedCard): HTMLElement {
     el('span', 'bid-figure', money(item.margin)),
     el('span', 'bid-figure', money(item.lastComp)),
     el('span', 'bid-figure', days(item.favorites)),
-    el('span', 'bid-figure', days(item.daysListed)),
     el('span', 'bid-figure', days(item.daysOwned))
   ])
 }

@@ -2,13 +2,11 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { altItemUrl, altListingUrl, altMarketplaceUrl } from './alt'
 import {
-  applyListedDays,
   applyListedFavorites,
   buildAltSellingBoard,
   calendarDay,
   parseAltCardsPage,
   listingWatchType,
-  parseAltListings,
   parseAltWatchCounts,
   projectedPayout,
   type AltVaultCard
@@ -28,7 +26,6 @@ function card(overrides: Partial<AltVaultCard> = {}): AltVaultCard {
     lastComp: 200,
     favorites: 12,
     acquiredDay: calendarDay('2026-10-20'),
-    listedDay: calendarDay('2026-10-23T18:00:00Z'),
     soldDay: null,
     salePrice: null,
     payout: null,
@@ -63,7 +60,7 @@ function node(overrides: Record<string, unknown> = {}): unknown {
 }
 
 describe('alt selling', () => {
-  it('reads collection cards and listing dates from Alt payloads', () => {
+  it('reads collection cards and listing favorites from Alt payloads', () => {
     const cards = parseAltCardsPage({
       data: {
         myCards: [
@@ -92,12 +89,6 @@ describe('alt selling', () => {
     assert.equal(cards[0]?.favorites, null)
     assert.equal(cards[1]?.status, 'PAYMENT_INITIATED')
     assert.equal(cards[1]?.payout, 50)
-
-    const dates = parseAltListings({
-      data: { listings: [{ id: 'list-1', createdAt: '2026-10-23T18:00:00Z' }] }
-    })
-    assert.equal(dates['list-1'], calendarDay('2026-10-23T18:00:00Z'))
-    assert.equal(applyListedDays(cards, dates)[0]?.listedDay, calendarDay('2026-10-23T18:00:00Z'))
 
     const counts = parseAltWatchCounts({
       data: {
@@ -138,7 +129,6 @@ describe('alt selling', () => {
           listPrice: null,
           lastComp: null,
           favorites: null,
-          listedDay: null,
           listingKind: null
         }),
         card({
@@ -177,7 +167,6 @@ describe('alt selling', () => {
     assert.equal(board.listed[0]?.margin, 51.79)
     assert.equal(board.listed[0]?.lastComp, 200)
     assert.equal(board.listed[0]?.favorites, 12)
-    assert.equal(board.listed[0]?.daysListed, 2)
     assert.equal(board.listed[0]?.daysOwned, 5)
     assert.deepEqual(
       board.pending.map((item) => [item.name, item.purchasePrice, item.salePrice, item.profit, item.soldOn, item.daysToSale]),
@@ -196,8 +185,7 @@ describe('alt selling', () => {
           listingId: 'auc-1',
           name: 'Mewtwo PSA 10',
           status: 'LIVE',
-          listingKind: 'auction',
-          listedDay: calendarDay('2026-10-24T18:00:00Z')
+          listingKind: 'auction'
         }),
         card({
           id: 'pending-empty',

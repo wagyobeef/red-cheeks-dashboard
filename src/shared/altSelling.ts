@@ -11,7 +11,6 @@ export type AltVaultCard = {
   lastComp: number | null
   favorites: number | null
   acquiredDay: number | null
-  listedDay: number | null
   soldDay: number | null
   salePrice: number | null
   payout: number | null
@@ -31,7 +30,6 @@ export type AltListedCard = {
   margin: number | null
   lastComp: number | null
   favorites: number | null
-  daysListed: number | null
   daysOwned: number | null
 }
 
@@ -207,7 +205,6 @@ function parseCard(value: unknown): AltVaultCard | null {
     lastComp: money(last?.amount),
     favorites: null,
     acquiredDay: calendarDay(purchase?.purchaseDate) ?? calendarDay(record.itemVaultedDate),
-    listedDay: null,
     soldDay: calendarDay(purchase?.soldDate),
     salePrice: payout,
     payout,
@@ -230,25 +227,6 @@ export function parseAltCardsPage(payload: unknown): AltVaultCard[] {
     cards.push(card)
   }
   return cards
-}
-
-export function parseAltListings(payload: unknown): Record<string, number | null> {
-  const root = recordOf(payload)
-  const data = recordOf(root?.data) ?? root
-  const rows = data?.listings
-  const dates: Record<string, number | null> = {}
-  if (!Array.isArray(rows)) return dates
-  for (const row of rows) {
-    const record = recordOf(row)
-    const listingId = id(record?.id)
-    if (!listingId) continue
-    dates[listingId] = calendarDay(record?.createdAt)
-  }
-  return dates
-}
-
-export function applyListedDays(cards: readonly AltVaultCard[], dates: Record<string, number | null>): AltVaultCard[] {
-  return cards.map((card) => (card.listingId && card.listingId in dates ? { ...card, listedDay: dates[card.listingId] ?? null } : card))
 }
 
 export function listingWatchType(card: Pick<AltVaultCard, 'listingKind'>): 'AUCTION' | 'FIXED_PRICE' {
@@ -327,7 +305,6 @@ export function buildAltSellingBoard(cards: readonly AltVaultCard[], now = Date.
         margin: card.purchasePrice === null || payout === null ? null : roundMoney(payout - card.purchasePrice),
         lastComp: card.lastComp,
         favorites: card.favorites,
-        daysListed: daysBetween(card.listedDay, today),
         daysOwned: daysBetween(card.acquiredDay, today)
       })
       continue

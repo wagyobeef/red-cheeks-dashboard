@@ -10,11 +10,11 @@ The overview shows Total value (sum of cost basis for cards still in the Alt vau
 
 Sections, in order, are Listed cards, Pending sales, and Unlisted cards. Empty sections are omitted. There is no pending-shipment section.
 
-Listed rows show item, purchase price, listing price, projected payout (91% of list), margin against that payout, last comp, favorites, days listed, and days owned. Pending rows show item, purchase price, total payout, profit, sold date, and days to sale. Unlisted rows show item, purchase price, and days owned. A row opens that card or listing on Alt in Chrome with the saved session.
+Listed rows show item, purchase price, listing price, projected payout (91% of list), margin against that payout, last comp, favorites, and days owned. Pending rows show item, purchase price, total payout, profit, sold date, and days to sale. Unlisted rows show item, purchase price, and days owned. A row opens that card or listing on Alt in Chrome with the saved session.
 
 ## Architecture
 
-The main process reads Alt `myCards` with the stored session and, for listed lots, `listings` for the list date. Parsing and the board live in `src/shared`. The renderer follows the Fanatics Selling cards and tables.
+The main process reads Alt `myCards` with the stored session and listing watch counts for favorites. Parsing and the board live in `src/shared`. The renderer follows the Fanatics Selling cards and tables.
 
 ## Steps
 

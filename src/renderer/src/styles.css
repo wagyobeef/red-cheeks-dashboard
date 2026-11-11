@@ -486,8 +486,8 @@ button:disabled {
 }
 
 .bid-section.sell-alt-listed {
-  grid-template-columns: minmax(220px, 1.7fr) 100px 100px 120px 96px 100px 88px 96px 110px;
-  min-width: 1140px;
+  grid-template-columns: minmax(220px, 1.7fr) 100px 100px 120px 96px 100px 88px 110px;
+  min-width: 1040px;
 }
 
 .bid-section.sell-alt-pending {

@@ -31,7 +31,6 @@ Cards that are currently listed on the Fanatics Marketplace. For each card, we w
 - Margin: difference between listing price and projected payout
 - Last Comp
 - Favorites: number of favorites the listing has
-- Days listed
 - Days owned
   At the top of the section, we display the number of cards listed.
 
@@ -43,8 +42,7 @@ Cards that are processing payment in the Alt Sold tab. For each card, we want to
 - Purchase price
 - Sale price (under Total Payout)
 - Profit
-- Sale date (under Sold Date)
-- Days from acquisition to sale
+- Days owned
 
 ### Unlisted Cards
 

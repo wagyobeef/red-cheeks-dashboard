@@ -1,12 +1,10 @@
 import { bidPageLabel, type LoadStep } from '../shared/fanatics'
 import {
-  applyListedDays,
   applyListedFavorites,
   buildAltSellingBoard,
   isListedStatus,
   listingWatchType,
   parseAltCardsPage,
-  parseAltListings,
   parseAltWatchCounts,
   type AltSellingSnapshot,
   type AltVaultCard
@@ -16,7 +14,6 @@ import { logSafe, UserFacingError } from './errors'
 
 const PAGE_SIZE = 24
 const MAX_CARD_PAGES = 40
-const LISTING_BATCH = 50
 const WATCH_BATCH = 25
 
 const CARDS_QUERY = `
@@ -39,15 +36,6 @@ const CARDS_QUERY = `
         profit
       }
       auctionDetails { highestBid highestBidWithBp auctionCycleId }
-    }
-  }
-`
-
-const LISTINGS_QUERY = `
-  query Listings($ids: [ID!]) {
-    listings(ids: $ids) {
-      id
-      createdAt
     }
   }
 `
@@ -92,24 +80,6 @@ async function fetchCardPages(report: Report): Promise<AltVaultCard[]> {
   return cards
 }
 
-async function fetchListedDays(cards: readonly AltVaultCard[], report: Report): Promise<Record<string, number | null>> {
-  const ids = [...new Set(cards.filter((card) => card.listingId && isListedStatus(card.status)).map((card) => card.listingId))]
-  const dates: Record<string, number | null> = {}
-  if (ids.length === 0) return dates
-  for (let index = 0; index < ids.length; index += LISTING_BATCH) {
-    const batch = ids.slice(index, index + LISTING_BATCH)
-    report({ id: 'listings', label: 'Checking listing dates' })
-    try {
-      const body = await altQuery('Listings', LISTINGS_QUERY, { ids: batch }, report)
-      Object.assign(dates, parseAltListings(body))
-    } catch (error) {
-      if (error instanceof UserFacingError && error.message === 'Sign in again to Alt.') throw error
-      logSafe(error)
-    }
-  }
-  return dates
-}
-
 async function fetchListedFavorites(cards: readonly AltVaultCard[], report: Report): Promise<Record<string, number | null>> {
   const seen = new Set<string>()
   const listed: AltVaultCard[] = []
@@ -139,8 +109,8 @@ async function fetchListedFavorites(cards: readonly AltVaultCard[], report: Repo
 
 async function fetchSelling(report: Report): Promise<AltVaultCard[]> {
   const cards = await fetchCardPages(report)
-  const [dates, favorites] = await Promise.all([fetchListedDays(cards, report), fetchListedFavorites(cards, report)])
-  return applyListedFavorites(applyListedDays(cards, dates), favorites)
+  const favorites = await fetchListedFavorites(cards, report)
+  return applyListedFavorites(cards, favorites)
 }
 
 export async function altSellingBoard(refresh: boolean, report: Report = quiet): Promise<AltSellingSnapshot> {
